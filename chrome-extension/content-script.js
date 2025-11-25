@@ -66,10 +66,19 @@ let lastKnownUrl = window.location.href;
 function startUrlMonitoring() {
   const state = stateManager.getState();
   
-  // Save party state whenever URL is about to change (for hard navigations)
+  // Save party state and request clean shutdown on hard navigations
   window.addEventListener('beforeunload', function savePartyStateBeforeUnload() {
-    if (state.partyActive && state.userId && state.roomId) {
+    const currentState = stateManager.getState();
+    if (currentState.partyActive && currentState.userId && currentState.roomId) {
+      // Persist enough info so the refreshed tab can rejoin cleanly
       urlSync.saveState();
+      
+      // Ask background to fully stop the party so peers get a proper LEAVE
+      try {
+        chrome.runtime.sendMessage({ type: 'STOP_PARTY' });
+      } catch (e) {
+        console.warn('Error sending STOP_PARTY on beforeunload:', e);
+      }
     }
   });
   
