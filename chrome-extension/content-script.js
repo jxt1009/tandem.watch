@@ -183,7 +183,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     roomId = request.roomId;
     console.log('Party started! Room:', roomId, 'User:', userId);
     // Inject controls and setup playback sync (wait for video if necessary)
-    injectControls();
+    //injectControls();
     setupPlaybackSync();
     sendResponse({ success: true });
   }
