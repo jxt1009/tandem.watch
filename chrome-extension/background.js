@@ -67,6 +67,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (request.type === 'URL_CHANGE') {
+    console.log('Broadcasting URL change:', request.url);
+    broadcastMessage({
+      type: 'URL_CHANGE',
+      url: request.url,
+      userId
+    });
+    sendResponse({ success: true });
+  }
+
   // Relay signaling messages from content scripts (offers/answers/ice)
   if (request.type === 'SIGNAL_SEND') {
     const msg = Object.assign({}, request.message || {});
@@ -263,6 +273,19 @@ async function handleSignalingMessage(data) {
             type: 'APPLY_SYNC_PLAYBACK', 
             currentTime: message.currentTime, 
             isPlaying: message.isPlaying,
+            fromUserId: message.userId 
+          }).catch(() => {});
+        });
+      });
+    }
+
+    if (message.type === 'URL_CHANGE' && message.userId !== userId) {
+      console.log('Received URL change from remote user:', message.url);
+      chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'APPLY_URL_CHANGE', 
+            url: message.url,
             fromUserId: message.userId 
           }).catch(() => {});
         });

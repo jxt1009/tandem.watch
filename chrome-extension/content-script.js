@@ -19,6 +19,10 @@ let lastPlayPauseCommand = null; // { action: 'play'|'pause', timestamp: Date.no
 let currentLeader = null; // userId of current leader
 let leaderLockTimeout = null;
 
+// URL monitoring - track when user navigates to different shows
+let lastKnownUrl = window.location.href;
+let applyingRemoteUrlChange = false; // prevent echo when we navigate due to remote command
+
 // Inject Netflix API access script into page context
 (function injectNetflixAPIHelper() {
   const script = document.createElement('script');
@@ -126,6 +130,29 @@ function isFollower() {
   return currentLeader !== null && currentLeader !== userId;
 }
 
+// URL monitoring - check for navigation changes
+function startUrlMonitoring() {
+  setInterval(function checkUrlChange() {
+    const currentUrl = window.location.href;
+    
+    // Check if URL changed and party is active
+    if (currentUrl !== lastKnownUrl && partyActive && !applyingRemoteUrlChange) {
+      console.log('URL changed from', lastKnownUrl, 'to', currentUrl);
+      lastKnownUrl = currentUrl;
+      
+      // Broadcast URL change to other clients
+      safeSendMessage({
+        type: 'URL_CHANGE',
+        url: currentUrl
+      });
+    }
+  }, 500); // Check every 500ms
+}
+
+function stopUrlMonitoring() {
+  lastKnownUrl = window.location.href;
+}
+
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Signaling messages forwarded from background
@@ -182,6 +209,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     userId = request.userId;
     roomId = request.roomId;
     console.log('Party started! Room:', roomId, 'User:', userId);
+    
+    // Start monitoring URL changes
+    startUrlMonitoring();
+    
     // Inject controls and setup playback sync (wait for video if necessary)
     //injectControls();
     setupPlaybackSync();
@@ -192,6 +223,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     partyActive = false;
     userId = null;
     roomId = null;
+    
+    // Stop URL monitoring
+    stopUrlMonitoring();
+    
     teardownPlaybackSync();
     
     // Stop stream monitor
@@ -307,6 +342,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
     });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'APPLY_URL_CHANGE') {
+    console.log('Applying URL change from remote user:', request.url, 'from user:', request.fromUserId);
+    
+    // Set flag to prevent echo
+    applyingRemoteUrlChange = true;
+    
+    // Navigate to the new URL
+    window.location.href = request.url;
+    
+    // Note: page will reload, so this flag will reset naturally
     sendResponse({ success: true });
   }
 });
