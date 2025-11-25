@@ -9,21 +9,14 @@ import { URLSync } from './modules/url-sync.js';
 
 // Initialize managers
 const stateManager = new StateManager();
+const uiManager = new UIManager();
 const netflixController = new NetflixController();
 const syncManager = new SyncManager(stateManager, netflixController);
-const webrtcManager = new WebRTCManager();
-const uiManager = new UIManager();
+const webrtcManager = new WebRTCManager(stateManager, uiManager);
 const urlSync = new URLSync(stateManager);
 
-// WebRTC variables (keeping these in main file for now)
+// Local media stream (still tracked here, but WebRTCManager knows about it too)
 let localStream = null;
-const peerConnections = webrtcManager.peerConnections;
-const remoteVideos = uiManager.getRemoteVideos();
-const remoteStreams = uiManager.getRemoteStreams();
-const reconnectionAttempts = webrtcManager.reconnectionAttempts;
-const reconnectionTimeouts = webrtcManager.reconnectionTimeouts;
-// Track peers that have explicitly left so we don't try to reconnect to them
-const peersThatLeft = new Set();
 
 // Check if we need to restore party state after navigation
 (function checkRestorePartyState() {
@@ -66,12 +59,10 @@ function getVideoElement() {
 let lastKnownUrl = window.location.href;
 
 function startUrlMonitoring() {
-  const state = stateManager.getState();
-  
   // Save party state and inform server/peers that THIS tab is leaving on hard navigations
   window.addEventListener('beforeunload', function savePartyStateBeforeUnload() {
     const currentState = stateManager.getState();
-    if (currentState.partyActive && currentState.userId && currentState.roomId) {
+    if (stateManager.isInParty()) {
       // Persist enough info so the refreshed tab can rejoin cleanly
       urlSync.saveState();
 
@@ -124,7 +115,7 @@ function stopUrlMonitoring() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Signaling messages forwarded from background
   if (request.type === 'SIGNAL' && request.message) {
-    handleSignalingMessage(request.message).catch(err => console.error('Signal handling error:', err));
+    webrtcManager.handleSignal(request.message).catch(err => console.error('Signal handling error:', err));
     return; // no sendResponse needed
   }
   
@@ -158,11 +149,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         // Start monitoring local stream health
         startLocalStreamMonitor(stream);
-        
-        // add or replace tracks to any existing peer connections
-        peerConnections.forEach((pc) => {
-          try { stream.getTracks().forEach(t => addOrReplaceTrack(pc, t, stream)); } catch (e) { console.warn('Error adding tracks to pc', e); }
-        });
+      
+        // Let WebRTC manager attach tracks to existing peer connections
+        webrtcManager.onLocalStreamAvailable(stream);
         sendResponse({ success: true, message: 'Media stream obtained' });
       })
       .catch((err) => {
@@ -210,25 +199,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Remove injected controls
     removeInjectedControls();
     
-    // Clear all reconnection attempts and timeouts
-    reconnectionTimeouts.forEach((timeoutHandle) => {
-      clearTimeout(timeoutHandle);
-    });
-    reconnectionTimeouts.clear();
-    reconnectionAttempts.clear();
-    
-    // Close and clear peer connections
-    try {
-      peerConnections.forEach((pc) => {
-        try { pc.close(); } catch (e) {}
-      });
-      peerConnections.clear();
-    } catch (e) {}
-    
-    // Remove remote video elements
-    try {
-      remoteVideos.forEach((v, id) => removeRemoteVideo(id));
-    } catch (e) {}
+    // Let WebRTC manager fully clean up connections, reconnection state, and remote UI
+    webrtcManager.clearAll();
     
     console.log('Party stopped');
     sendResponse({ success: true });
@@ -390,350 +362,4 @@ function addOrReplaceTrack(pc, track, stream) {
   }
 }
 
-// --- WebRTC signaling helpers ---
-
-function sendSignal(message) {
-  stateManager.safeSendMessage({ type: 'SIGNAL_SEND', message }, function(resp) {
-    // optionally handle response
-  });
-}
-
-async function handleSignalingMessage(message) {
-  if (!message || !message.type) return;
-  const type = message.type;
-  const from = message.userId || message.from;
-  const to = message.to;
-  const state = stateManager.getState();
-
-  // Ignore messages not for us (if addressed)
-  if (to && to !== state.userId) return;
-
-  if (type === 'JOIN' && from && from !== state.userId) {
-    // Another user joined the room — initiate P2P if we have local media
-    // Clear any previous explicit-leave state for this peer
-    peersThatLeft.delete(from);
-    if (!peerConnections.has(from)) {
-      try {
-        const pc = createPeerConnection(from);
-        peerConnections.set(from, pc);
-        if (localStream) {
-          localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
-        }
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
-      } catch (err) {
-        console.error('Error handling JOIN and creating offer:', err);
-        peerConnections.delete(from);
-      }
-    }
-    return;
-  }
-
-  if (type === 'OFFER' && message.offer && from && from !== state.userId) {
-    // Received an offer from a peer
-    let pc = peerConnections.get(from);
-    
-    // If connection exists, check if we need to recreate it
-    if (pc) {
-      const pcState = pc.signalingState;
-      // Close and recreate if in any non-stable, non-closed state
-      // OR if stable (renegotiation scenario - safer to recreate)
-      if (pcState !== 'closed') {
-        console.log('[WebRTC] Received new offer while in state:', pcState, '- recreating connection for', from);
-        try {
-          pc.close();
-        } catch (e) {}
-        peerConnections.delete(from);
-        pc = null;
-      }
-    }
-
-    if (!pc) {
-      pc = createPeerConnection(from);
-      peerConnections.set(from, pc);
-    }
-
-    try {
-      await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-      if (localStream) {
-        localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
-      }
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      sendSignal({ type: 'ANSWER', from: state.userId, to: from, answer: pc.localDescription });
-    } catch (err) {
-      console.error('Error handling offer:', err);
-      // Clean up failed connection
-      peerConnections.delete(from);
-      try { pc.close(); } catch (e) {}
-    }
-    return;
-  }  if (type === 'ANSWER' && message.answer && from && from !== state.userId) {
-    const pc = peerConnections.get(from);
-    if (pc) {
-      try {
-        // Check if we're expecting an answer
-        if (pc.signalingState === 'have-local-offer') {
-          await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
-        } else {
-          console.warn('Received answer in unexpected state:', pc.signalingState);
-        }
-      } catch (err) {
-        console.error('Error handling answer:', err);
-      }
-    }
-    return;
-  }
-
-  if (type === 'ICE_CANDIDATE' && message.candidate && from && from !== state.userId) {
-    const pc = peerConnections.get(from);
-    if (pc) {
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
-      } catch (err) {
-        console.warn('Error adding received ICE candidate', err);
-      }
-    }
-    return;
-  }
-
-  if (type === 'LEAVE' && from) {
-    // Peer left explicitly
-    peersThatLeft.add(from);
-    const pc = peerConnections.get(from);
-    if (pc) {
-      try {
-        pc.close();
-      } catch (e) {}
-      peerConnections.delete(from);
-    }
-    clearReconnectionState(from);
-    removeRemoteVideo(from);
-    return;
-  }
-}
-
-// Attempt to reconnect to a peer
-async function attemptReconnection(peerId) {
-  const state = stateManager.getState();
-  if (!state.partyActive || !state.userId || !state.roomId) {
-    console.log('Cannot reconnect - party not active');
-    return;
-  }
-
-  // Don't attempt to reconnect to peers that have explicitly left
-  if (peersThatLeft.has(peerId)) {
-    console.log('Not attempting reconnection to peer that has explicitly left:', peerId);
-    clearReconnectionState(peerId);
-    return;
-  }
-
-  const attempts = reconnectionAttempts.get(peerId) || 0;
-  const maxAttempts = 5;
-  const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 30000); // Exponential backoff, max 30s
-
-  if (attempts >= maxAttempts) {
-    console.log('Max reconnection attempts reached for', peerId);
-    reconnectionAttempts.delete(peerId);
-    reconnectionTimeouts.delete(peerId);
-    return;
-  }
-
-  console.log(`Attempting reconnection to ${peerId} (attempt ${attempts + 1}/${maxAttempts}) in ${backoffDelay}ms`);
-  reconnectionAttempts.set(peerId, attempts + 1);
-
-  // Clear any existing timeout for this peer
-  const existingTimeout = reconnectionTimeouts.get(peerId);
-  if (existingTimeout) {
-    clearTimeout(existingTimeout);
-  }
-
-  // Schedule reconnection attempt
-  const timeoutHandle = setTimeout(async function() {
-    console.log('Reconnecting to', peerId);
-    
-    // Remove old connection
-    const oldPc = peerConnections.get(peerId);
-    if (oldPc) {
-      try {
-        oldPc.close();
-      } catch (e) {
-        console.warn('Error closing old peer connection:', e);
-      }
-      peerConnections.delete(peerId);
-    }
-    
-    // Create new connection and send offer
-    try {
-      const pc = createPeerConnection(peerId);
-      peerConnections.set(peerId, pc);
-      
-      if (localStream) {
-        localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
-      }
-      
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      sendSignal({ type: 'OFFER', from: state.userId, to: peerId, offer: pc.localDescription });
-      
-      console.log('Reconnection offer sent to', peerId);
-    } catch (err) {
-      console.error('Failed to create reconnection offer:', err);
-      // Retry with next attempt
-      attemptReconnection(peerId);
-    }
-  }, backoffDelay);
-
-  reconnectionTimeouts.set(peerId, timeoutHandle);
-}
-
-// Clear reconnection state for a peer (called on successful connection)
-function clearReconnectionState(peerId) {
-  reconnectionAttempts.delete(peerId);
-  const timeoutHandle = reconnectionTimeouts.get(peerId);
-  if (timeoutHandle) {
-    clearTimeout(timeoutHandle);
-    reconnectionTimeouts.delete(peerId);
-  }
-}
-
-function createPeerConnection(peerId) {
-  const state = stateManager.getState();
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302'] },
-      { urls: ['stun:stun1.l.google.com:19302'] }
-    ]
-  });
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      sendSignal({ type: 'ICE_CANDIDATE', from: state.userId, to: peerId, candidate: event.candidate });
-    }
-  };
-
-  pc.ontrack = (event) => {
-    console.log('Received remote track from', peerId, 'track=', event.track && event.track.kind);
-    // Some browsers populate event.streams[0], others deliver individual tracks.
-    let stream = (event.streams && event.streams[0]) || remoteStreams.get(peerId);
-    if (!stream) {
-      stream = new MediaStream();
-      remoteStreams.set(peerId, stream);
-    }
-    if (event.track) {
-      try { 
-        stream.addTrack(event.track);
-        // Monitor track state
-        event.track.onended = function() {
-          console.warn('Remote track ended from', peerId, 'kind=', event.track.kind);
-        };
-        console.log('Added remote track to stream, kind=', event.track.kind, 'readyState=', event.track.readyState);
-      } catch (e) { 
-        console.warn('Failed to add remote track to stream', e); 
-      }
-    }
-    // Only create the video element once, not on every track
-    if (!remoteVideos.has(peerId)) {
-      addRemoteVideo(peerId, stream);
-    }
-  };
-
-  pc.onconnectionstatechange = () => {
-    console.log('PC state', pc.connectionState, 'for', peerId);
-    
-    if (pc.connectionState === 'connected') {
-      // Connection successful - clear any reconnection attempts
-      console.log('Connection established successfully with', peerId);
-      clearReconnectionState(peerId);
-    } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      // Connection lost - attempt reconnection
-      if (peersThatLeft.has(peerId)) {
-        console.warn('Connection', pc.connectionState, 'with peer that has left', peerId, '- not reconnecting');
-        peerConnections.delete(peerId);
-        removeRemoteVideo(peerId);
-        clearReconnectionState(peerId);
-      } else {
-        console.warn('Connection', pc.connectionState, 'with', peerId, '- attempting reconnection');
-        peerConnections.delete(peerId);
-        removeRemoteVideo(peerId);
-        
-        // Attempt to reconnect
-        attemptReconnection(peerId);
-      }
-    } else if (pc.connectionState === 'closed') {
-      // Connection intentionally closed - clean up without reconnecting
-      console.log('Connection closed with', peerId);
-      peerConnections.delete(peerId);
-      removeRemoteVideo(peerId);
-      clearReconnectionState(peerId);
-    }
-  };
-
-  return pc;
-}
-
-function addRemoteVideo(peerId, stream) {
-  removeRemoteVideo(peerId);
-  const v = document.createElement('video');
-  v.id = 'toperparty-remote-' + peerId;
-  v.autoplay = true;
-  v.playsInline = true;
-  // Start muted to allow autoplay, then unmute after playing
-  v.muted = true;
-  v.style.position = 'fixed';
-  v.style.bottom = '20px';
-  v.style.right = (20 + (remoteVideos.size * 180)) + 'px';
-  v.style.width = '240px';
-  v.style.height = '160px';
-  v.style.zIndex = 10001;
-  v.style.border = '2px solid #00aaff';
-  v.style.borderRadius = '4px';
-  
-  // Log audio tracks for debugging
-  const audioTracks = stream.getAudioTracks();
-  console.log('Remote stream audio tracks:', audioTracks.length);
-  audioTracks.forEach(function(track) {
-    console.log('Audio track:', track.id, 'enabled=', track.enabled, 'readyState=', track.readyState);
-  });
-  
-  try {
-    v.srcObject = stream;
-  } catch (e) {
-    v.src = URL.createObjectURL(stream);
-  }
-  document.body.appendChild(v);
-  remoteVideos.set(peerId, v);
-  
-  try {
-    v.play().then(function() {
-      // Unmute after successful play to enable audio
-      console.log('Remote video playing, unmuting audio for', peerId);
-      v.muted = false;
-      v.volume = 1.0;
-    }).catch(function(err) {
-      console.warn('Remote video play() failed:', err);
-      // Try unmuting anyway
-      v.muted = false;
-    });
-  } catch (e) {
-    console.error('Exception calling play():', e);
-  }
-}
-
-function removeRemoteVideo(peerId) {
-  const v = remoteVideos.get(peerId);
-  if (v) {
-    try {
-      // Do NOT stop remote tracks - they are managed by the sender
-      // Just clear the srcObject to release the reference
-      if (v.srcObject) {
-        v.srcObject = null;
-      }
-    } catch (e) {}
-    v.remove();
-    remoteVideos.delete(peerId);
-  }
-  // Also clean up the stream reference
-  remoteStreams.delete(peerId);
-}
+// WebRTC signaling and connection details now live in WebRTCManager
