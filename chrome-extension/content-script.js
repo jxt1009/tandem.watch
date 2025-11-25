@@ -502,8 +502,8 @@ function attachLocalPreview(stream) {
   v.style.position = 'fixed';
   v.style.bottom = '20px';
   v.style.left = '20px';
-  v.style.width = '160px';
-  v.style.height = '120px';
+  v.style.width = '240px';
+  v.style.height = '160px';
   v.style.zIndex = 10001;
   v.style.border = '2px solid #e50914';
   v.style.borderRadius = '4px';
@@ -812,8 +812,8 @@ function addRemoteVideo(peerId, stream) {
   v.style.position = 'fixed';
   v.style.bottom = '20px';
   v.style.right = (20 + (remoteVideos.size * 180)) + 'px';
-  v.style.width = '160px';
-  v.style.height = '120px';
+  v.style.width = '240px';
+  v.style.height = '160px';
   v.style.zIndex = 10001;
   v.style.border = '2px solid #00aaff';
   v.style.borderRadius = '4px';
