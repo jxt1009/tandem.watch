@@ -220,7 +220,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'APPLY_SYNC_PLAYBACK') {
-    syncManager.handlePassiveSync(request.currentTime, request.isPlaying, request.fromUserId);
+    syncManager.handlePassiveSync(request.currentTime, request.isPlaying, request.fromUserId, request.timestamp);
     sendResponse({ success: true });
   }
 

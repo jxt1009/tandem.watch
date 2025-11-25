@@ -299,6 +299,7 @@ async function handleSignalingMessage(data) {
             type: 'APPLY_SYNC_PLAYBACK', 
             currentTime: message.currentTime, 
             isPlaying: message.isPlaying,
+            timestamp: message.timestamp,
             fromUserId: message.userId 
           }).catch(() => {});
         });

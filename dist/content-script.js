@@ -292,16 +292,22 @@ class SyncManager {
     const onTimeUpdate = () => {
       if (!this.state.isActive()) return;
       
-      // Don't send passive sync right after a local seek - prevents sending stale position
+      // Don't send passive sync right after a local OR remote seek - prevents sending stale position
       const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
+      const timeSinceRemoteAction = this.state.getTimeSinceRemoteAction();
+      
       if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 6000) {
         return; // Suppress passive sync for 6s after local seek
+      }
+      
+      if (this.state.lastRemoteAction.type === 'seek' && timeSinceRemoteAction < 6000) {
+        return; // Suppress passive sync for 6s after remote seek
       }
       
       const now = Date.now();
       if (now - lastSentAt < 1000) return; // throttle to ~1s
       lastSentAt = now;
-      this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
+      this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused, timestamp: now });
     };
     
     video.addEventListener('play', onPlay);
@@ -318,13 +324,20 @@ class SyncManager {
     this.syncInterval = setInterval(() => {
       if (!this.state.isActive() || !video) return;
       
-      // Don't send passive sync right after a local seek - prevents sending stale position
+      // Don't send passive sync right after a local OR remote seek - prevents sending stale position
       const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
+      const timeSinceRemoteAction = this.state.getTimeSinceRemoteAction();
+      
       if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 6000) {
         return; // Suppress passive sync for 6s after local seek
       }
       
-      this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
+      if (this.state.lastRemoteAction.type === 'seek' && timeSinceRemoteAction < 6000) {
+        return; // Suppress passive sync for 6s after remote seek
+      }
+      
+      const now = Date.now();
+      this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused, timestamp: now });
     }, 5000);
   }
   
@@ -406,8 +419,17 @@ class SyncManager {
   }
   
   // Handle passive sync (drift correction)
-  async handlePassiveSync(currentTime, isPlaying, fromUserId) {
+  async handlePassiveSync(currentTime, isPlaying, fromUserId, messageTimestamp) {
     try {
+      // Reject stale passive sync messages (older than 3 seconds)
+      if (messageTimestamp) {
+        const messageAge = Date.now() - messageTimestamp;
+        if (messageAge > 3000) {
+          console.log('Ignoring stale passive sync message - age:', messageAge, 'ms');
+          return;
+        }
+      }
+      
       const localTime = await this.netflix.getCurrentTime();
       const requestedTime = currentTime * 1000; // Convert to ms
       const timeDiff = Math.abs(localTime - requestedTime);
@@ -964,7 +986,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'APPLY_SYNC_PLAYBACK') {
-    syncManager.handlePassiveSync(request.currentTime, request.isPlaying, request.fromUserId);
+    syncManager.handlePassiveSync(request.currentTime, request.isPlaying, request.fromUserId, request.timestamp);
     sendResponse({ success: true });
   }
 
