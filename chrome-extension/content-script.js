@@ -9,8 +9,8 @@ const peerConnections = new Map();
 const remoteVideos = new Map();
 const remoteStreams = new Map();
 
-// Flag to prevent infinite play/pause loops
-let ignoringPlaybackEvents = false;
+// Track when we're applying a remote command to prevent echo
+let applyingRemoteCommand = false;
 
 // Track last explicit play/pause command to avoid sync overriding it
 let lastPlayPauseCommand = null; // { action: 'play'|'pause', timestamp: Date.now() }
@@ -234,21 +234,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       timestamp: Date.now()
     };
     
-    // Ignore our own play/pause events for a short time to prevent loops
-    ignoringPlaybackEvents = true;
-    console.log('Setting ignoringPlaybackEvents = true for remote command');
-    setTimeout(function() { 
-      ignoringPlaybackEvents = false; 
-      console.log('Reset ignoringPlaybackEvents = false');
-    }, 1000); // Increased to 1s since Netflix API is async
+    // Set flag to block immediate echo, then clear it
+    applyingRemoteCommand = true;
+    console.log('Applying remote', request.control, 'command');
     
     if (request.control === 'play') {
       NetflixPlayer.play().then(function() {
-        console.log('Netflix player play command sent (from remote)');
+        console.log('Netflix player play command completed (from remote)');
+        // Clear flag after a brief delay to catch the echo event
+        setTimeout(function() { applyingRemoteCommand = false; }, 200);
+      }).catch(function() {
+        applyingRemoteCommand = false;
       });
     } else if (request.control === 'pause') {
       NetflixPlayer.pause().then(function() {
-        console.log('Netflix player pause command sent (from remote)');
+        console.log('Netflix player pause command completed (from remote)');
+        // Clear flag after a brief delay to catch the echo event
+        setTimeout(function() { applyingRemoteCommand = false; }, 200);
+      }).catch(function() {
+        applyingRemoteCommand = false;
       });
     }
     sendResponse({ success: true });
@@ -259,14 +263,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.fromUserId) {
       setRemoteLeader(request.fromUserId);
     }
-    
-    // Ignore our own play/pause events for a short time to prevent loops
-    ignoringPlaybackEvents = true;
-    console.log('Setting ignoringPlaybackEvents = true for remote sync');
-    setTimeout(function() { 
-      ignoringPlaybackEvents = false; 
-      console.log('Reset ignoringPlaybackEvents = false');
-    }, 1000); // Increased to 1s since Netflix API is async
     
     // Get current time from Netflix API
     NetflixPlayer.getCurrentTime().then(function(currentTime) {
@@ -294,10 +290,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         if (request.isPlaying && isPaused) {
           console.log('Sync: resuming playback');
-          NetflixPlayer.play();
+          applyingRemoteCommand = true;
+          NetflixPlayer.play().then(function() {
+            setTimeout(function() { applyingRemoteCommand = false; }, 200);
+          }).catch(function() {
+            applyingRemoteCommand = false;
+          });
         } else if (!request.isPlaying && !isPaused) {
           console.log('Sync: pausing playback');
-          NetflixPlayer.pause();
+          applyingRemoteCommand = true;
+          NetflixPlayer.pause().then(function() {
+            setTimeout(function() { applyingRemoteCommand = false; }, 200);
+          }).catch(function() {
+            applyingRemoteCommand = false;
+          });
         }
       });
     });
@@ -317,24 +323,24 @@ function setupPlaybackSync() {
     // Track play/pause events
     // Note: play/pause should always be allowed, leader lock only applies to seeking
     const onPlay = function handlePlayEvent() {
-      console.log('onPlay event fired - ignoringPlaybackEvents:', ignoringPlaybackEvents, 'partyActive:', partyActive);
-      if (partyActive && !ignoringPlaybackEvents) {
+      console.log('onPlay event fired - applyingRemoteCommand:', applyingRemoteCommand, 'partyActive:', partyActive);
+      if (partyActive && !applyingRemoteCommand) {
         console.log('Local play event - broadcasting to peers');
         becomeLeader(); // Take leadership for subsequent seeks
         safeSendMessage({ type: 'PLAY_PAUSE', control: 'play', timestamp: video.currentTime });
-      } else if (ignoringPlaybackEvents) {
-        console.log('Ignoring local play event (triggered by remote)');
+      } else if (applyingRemoteCommand) {
+        console.log('Ignoring echo of remote play command');
       }
     };
 
     const onPause = function handlePauseEvent() {
-      console.log('onPause event fired - ignoringPlaybackEvents:', ignoringPlaybackEvents, 'partyActive:', partyActive);
-      if (partyActive && !ignoringPlaybackEvents) {
+      console.log('onPause event fired - applyingRemoteCommand:', applyingRemoteCommand, 'partyActive:', partyActive);
+      if (partyActive && !applyingRemoteCommand) {
         console.log('Local pause event - broadcasting to peers');
         becomeLeader(); // Take leadership for subsequent seeks
         safeSendMessage({ type: 'PLAY_PAUSE', control: 'pause', timestamp: video.currentTime });
-      } else if (ignoringPlaybackEvents) {
-        console.log('Ignoring local pause event (triggered by remote)');
+      } else if (applyingRemoteCommand) {
+        console.log('Ignoring echo of remote pause command');
       }
     };
 
@@ -343,12 +349,14 @@ function setupPlaybackSync() {
 
     // Track seeking events to broadcast manual scrubbing
     const onSeeked = function handleSeekedEvent() {
-      if (partyActive && !ignoringPlaybackEvents && !isFollower()) {
+      if (partyActive && !applyingRemoteCommand && !isFollower()) {
         console.log('Local seek completed - broadcasting position to peers');
         becomeLeader();
         safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
       } else if (isFollower()) {
         console.log('Suppressing local seek event (following remote leader)');
+      } else if (applyingRemoteCommand) {
+        console.log('Ignoring echo of remote seek command');
       }
     };
     
@@ -357,7 +365,7 @@ function setupPlaybackSync() {
     // Throttled timeupdate sender (every ~1s at most)
     let lastSentAt = 0;
     const onTimeUpdate = function handleTimeUpdate() {
-      if (!partyActive || ignoringPlaybackEvents || isFollower()) return;
+      if (!partyActive || applyingRemoteCommand || isFollower()) return;
       const now = Date.now();
       if (now - lastSentAt < 1000) return; // throttle to ~1s
       lastSentAt = now;
@@ -368,7 +376,7 @@ function setupPlaybackSync() {
 
     // Periodic fallback sync (every 5 seconds)
     window.playbackSyncInterval = setInterval(function syncPlaybackPeriodic() {
-      if (partyActive && video && !ignoringPlaybackEvents && !isFollower()) {
+      if (partyActive && video && !applyingRemoteCommand && !isFollower()) {
         safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
       }
     }, 5000);
