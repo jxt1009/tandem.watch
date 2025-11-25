@@ -379,13 +379,13 @@ class SyncManager {
     
     try {
       if (control === 'play') {
+        this.state.recordLocalAction('play'); // Record BEFORE play to prevent echo
         await this.netflix.play();
         console.log('Remote play completed');
-        this.state.recordLocalAction('play'); // Prevent echo
       } else if (control === 'pause') {
+        this.state.recordLocalAction('pause'); // Record BEFORE pause to prevent echo
         await this.netflix.pause();
         console.log('Remote pause completed');
-        this.state.recordLocalAction('pause'); // Prevent echo
       }
     } catch (err) {
       console.error('Failed to apply remote', control, ':', err);
@@ -400,18 +400,18 @@ class SyncManager {
     const requestedTime = currentTime * 1000; // Convert to ms
     
     try {
+      this.state.recordLocalAction('seek'); // Record BEFORE seek to prevent echo
       await this.netflix.seek(requestedTime);
       console.log('Remote seek completed');
-      this.state.recordLocalAction('seek'); // Prevent echo
       
       // Also sync play/pause state
       const isPaused = await this.netflix.isPaused();
       if (isPlaying && isPaused) {
+        this.state.recordLocalAction('play'); // Record BEFORE play to prevent echo
         await this.netflix.play();
-        this.state.recordLocalAction('play');
       } else if (!isPlaying && !isPaused) {
+        this.state.recordLocalAction('pause'); // Record BEFORE pause to prevent echo
         await this.netflix.pause();
-        this.state.recordLocalAction('pause');
       }
     } catch (err) {
       console.error('Failed to apply remote seek:', err);
@@ -461,8 +461,8 @@ class SyncManager {
       // Increased to 5 seconds to avoid interfering with seeks
       if (timeDiff > 5000) {
         console.log('Passive sync: diff was', (timeDiff / 1000).toFixed(1), 's - correcting');
+        this.state.recordLocalAction('seek'); // Record BEFORE seek to prevent echo
         await this.netflix.seek(requestedTime);
-        this.state.recordLocalAction('seek');
       }
       
       // Handle play/pause state sync - but with stricter checks
@@ -478,12 +478,12 @@ class SyncManager {
       
       if (isPlaying && isPaused) {
         console.log('Passive sync: resuming playback');
+        this.state.recordLocalAction('play'); // Record BEFORE play to prevent echo
         await this.netflix.play();
-        this.state.recordLocalAction('play');
       } else if (!isPlaying && !isPaused) {
         console.log('Passive sync: pausing playback');
+        this.state.recordLocalAction('pause'); // Record BEFORE pause to prevent echo
         await this.netflix.pause();
-        this.state.recordLocalAction('pause');
       }
     } catch (err) {
       console.error('Error handling passive sync:', err);
