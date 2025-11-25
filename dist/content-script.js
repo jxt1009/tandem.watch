@@ -292,6 +292,12 @@ class SyncManager {
     const onTimeUpdate = () => {
       if (!this.state.isActive()) return;
       
+      // Don't send passive sync right after a local seek - prevents sending stale position
+      const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
+      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 4000) {
+        return; // Suppress passive sync for 4s after local seek
+      }
+      
       const now = Date.now();
       if (now - lastSentAt < 1000) return; // throttle to ~1s
       lastSentAt = now;
@@ -310,9 +316,15 @@ class SyncManager {
   // Periodic fallback sync (every 5 seconds)
   startPeriodicSync(video) {
     this.syncInterval = setInterval(() => {
-      if (this.state.isActive() && video) {
-        this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
+      if (!this.state.isActive() || !video) return;
+      
+      // Don't send passive sync right after a local seek - prevents sending stale position
+      const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
+      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 4000) {
+        return; // Suppress passive sync for 4s after local seek
       }
+      
+      this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
     }, 5000);
   }
   
