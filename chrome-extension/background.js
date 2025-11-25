@@ -36,6 +36,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (request.type === 'RESTORE_PARTY') {
+    console.log('Restoring party after navigation:', request.roomId);
+    // Use the saved userId instead of generating a new one
+    if (request.userId) {
+      userId = request.userId;
+    }
+    startParty(request.roomId).then(() => {
+      sendResponse({ success: true });
+    }).catch(err => {
+      console.error('Failed to restore party:', err);
+      sendResponse({ success: false, error: err.message });
+    });
+    return true; // Keep channel open for async response
+  }
+
   if (request.type === 'GET_STATUS') {
     console.log('Sending status:', { isConnected, roomId, userId, hasLocalStream: !!localStream });
     sendResponse({

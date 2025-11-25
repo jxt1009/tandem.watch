@@ -23,6 +23,32 @@ let leaderLockTimeout = null;
 let lastKnownUrl = window.location.href;
 let applyingRemoteUrlChange = false; // prevent echo when we navigate due to remote command
 
+// Check if we need to restore party state after navigation
+(function checkRestorePartyState() {
+  const partyState = sessionStorage.getItem('toperparty_state');
+  if (partyState) {
+    try {
+      const state = JSON.parse(partyState);
+      console.log('Detected party state after navigation, will restore:', state);
+      
+      // Clear the stored state
+      sessionStorage.removeItem('toperparty_state');
+      
+      // Notify background that we need to rejoin
+      setTimeout(function() {
+        chrome.runtime.sendMessage({
+          type: 'RESTORE_PARTY',
+          roomId: state.roomId,
+          userId: state.userId
+        });
+      }, 1000); // Wait 1s for page to stabilize
+    } catch (e) {
+      console.error('Failed to restore party state:', e);
+      sessionStorage.removeItem('toperparty_state');
+    }
+  }
+})();
+
 // Inject Netflix API access script into page context
 (function injectNetflixAPIHelper() {
   const script = document.createElement('script');
@@ -132,6 +158,21 @@ function isFollower() {
 
 // URL monitoring - check for navigation changes
 function startUrlMonitoring() {
+  // Save party state whenever URL is about to change (for hard navigations)
+  window.addEventListener('beforeunload', function savePartyStateBeforeUnload() {
+    if (partyActive && userId && roomId) {
+      const stateToSave = {
+        roomId: roomId,
+        userId: userId,
+        navigatedFrom: window.location.href,
+        timestamp: Date.now()
+      };
+      sessionStorage.setItem('toperparty_state', JSON.stringify(stateToSave));
+      console.log('Saved party state before unload');
+    }
+  });
+  
+  // Also monitor for soft navigations (client-side routing)
   setInterval(function checkUrlChange() {
     const currentUrl = window.location.href;
     
@@ -348,13 +389,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'APPLY_URL_CHANGE') {
     console.log('Applying URL change from remote user:', request.url, 'from user:', request.fromUserId);
     
+    const currentUrl = window.location.href;
+    
+    // Check if this is just a watch page parameter change (same base path)
+    const currentIsWatch = currentUrl.includes('/watch/');
+    const newIsWatch = request.url.includes('/watch/');
+    
     // Set flag to prevent echo
     applyingRemoteUrlChange = true;
     
-    // Navigate to the new URL
-    window.location.href = request.url;
+    if (currentIsWatch && newIsWatch) {
+      // Both are watch pages - use history API for soft navigation (preserves state)
+      console.log('Using soft navigation (history.pushState)');
+      window.history.pushState({}, '', request.url);
+      
+      // Trigger Netflix's router to detect the change
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      
+      // Reset flag after a delay
+      setTimeout(function() {
+        applyingRemoteUrlChange = false;
+        lastKnownUrl = request.url;
+      }, 1000);
+    } else {
+      // Navigating to/from browse pages - need hard navigation
+      console.log('Using hard navigation (page reload)');
+      
+      // Save party state before navigation so we can restore after reload
+      if (partyActive && userId && roomId) {
+        const stateToSave = {
+          roomId: roomId,
+          userId: userId,
+          navigatedFrom: window.location.href,
+          timestamp: Date.now()
+        };
+        sessionStorage.setItem('toperparty_state', JSON.stringify(stateToSave));
+        console.log('Saved party state before navigation');
+      }
+      
+      // Navigate to the new URL
+      window.location.href = request.url;
+    }
     
-    // Note: page will reload, so this flag will reset naturally
     sendResponse({ success: true });
   }
 });
