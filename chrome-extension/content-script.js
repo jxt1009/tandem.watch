@@ -9,6 +9,9 @@ const peerConnections = new Map();
 const remoteVideos = new Map();
 const remoteStreams = new Map();
 
+// Flag to prevent infinite play/pause loops
+let ignoringPlaybackEvents = false;
+
 // Inject Netflix API access script into page context
 (function injectNetflixAPIHelper() {
   const script = document.createElement('script');
@@ -159,19 +162,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'APPLY_PLAYBACK_CONTROL') {
+    // Ignore our own play/pause events for a short time to prevent loops
+    ignoringPlaybackEvents = true;
+    setTimeout(function() { ignoringPlaybackEvents = false; }, 500);
+    
     if (request.control === 'play') {
       NetflixPlayer.play().then(function() {
-        console.log('Netflix player play command sent');
+        console.log('Netflix player play command sent (from remote)');
       });
     } else if (request.control === 'pause') {
       NetflixPlayer.pause().then(function() {
-        console.log('Netflix player pause command sent');
+        console.log('Netflix player pause command sent (from remote)');
       });
     }
     sendResponse({ success: true });
   }
 
   if (request.type === 'APPLY_SYNC_PLAYBACK') {
+    // Ignore our own play/pause events for a short time to prevent loops
+    ignoringPlaybackEvents = true;
+    setTimeout(function() { ignoringPlaybackEvents = false; }, 500);
+    
     // Get current time from Netflix API
     NetflixPlayer.getCurrentTime().then(function(currentTime) {
       const requestedTime = request.currentTime * 1000; // Convert to ms
@@ -206,14 +217,20 @@ function setupPlaybackSync() {
 
     // Track play/pause events
     const onPlay = function handlePlayEvent() {
-      if (partyActive) {
+      if (partyActive && !ignoringPlaybackEvents) {
+        console.log('Local play event - broadcasting to peers');
         chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'play', timestamp: video.currentTime }).catch(function() {});
+      } else if (ignoringPlaybackEvents) {
+        console.log('Ignoring local play event (triggered by remote)');
       }
     };
 
     const onPause = function handlePauseEvent() {
-      if (partyActive) {
+      if (partyActive && !ignoringPlaybackEvents) {
+        console.log('Local pause event - broadcasting to peers');
         chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'pause', timestamp: video.currentTime }).catch(function() {});
+      } else if (ignoringPlaybackEvents) {
+        console.log('Ignoring local pause event (triggered by remote)');
       }
     };
 
