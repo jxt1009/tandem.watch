@@ -192,16 +192,29 @@ export class SyncManager {
       
       // Check if we just did a local action - don't override it
       const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
+      const timeSinceRemoteAction = this.state.getTimeSinceRemoteAction();
       const lastActionType = this.state.lastLocalAction.type;
+      const lastRemoteActionType = this.state.lastRemoteAction.type;
       
-      // Completely ignore passive sync if we just did ANY local action within 2 seconds
+      // Long protection window after explicit seeks (local OR remote) to prevent feedback loops
+      if (lastActionType === 'seek' && timeSinceLocalAction < 4000) {
+        console.log('Ignoring passive sync - recent local seek:', timeSinceLocalAction, 'ms ago');
+        return;
+      }
+      
+      if (lastRemoteActionType === 'seek' && timeSinceRemoteAction < 4000) {
+        console.log('Ignoring passive sync - recent remote seek:', timeSinceRemoteAction, 'ms ago');
+        return;
+      }
+      
+      // Standard protection for other actions
       if (timeSinceLocalAction < 2000) {
         console.log('Ignoring passive sync - recent local action:', lastActionType, timeSinceLocalAction, 'ms ago');
         return;
       }
       
-      // Only sync time if difference is significant (>2s)
-      if (timeDiff > 2000) {
+      // Only sync time if difference is significant (>3s) - raised from 2s to prevent oscillation
+      if (timeDiff > 3000) {
         console.log('Passive sync: diff was', (timeDiff / 1000).toFixed(1), 's - correcting');
         await this.netflix.seek(requestedTime);
         this.state.recordLocalAction('seek');
