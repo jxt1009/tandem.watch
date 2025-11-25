@@ -49,10 +49,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Performing full party reset (Stop -> Start) for restoration');
     stopParty(false);
 
-    // Use the saved userId instead of generating a new one
-    if (request.userId) {
-      userId = request.userId;
-    }
+    // Always generate a new userId for the restored session to ensure clean WebRTC state
+    userId = generateUserId();
+    
     startParty(request.roomId).then(() => {
       sendResponse({ success: true });
     }).catch(err => {
@@ -111,6 +110,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       url: request.url,
       userId
     });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'REQUEST_SYNC') {
+    console.log('Broadcasting REQUEST_SYNC from', userId);
+    broadcastMessage({
+      type: 'REQUEST_SYNC',
+      userId
+    });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'SYNC_RESPONSE') {
+    // Forward response only to the requester
+    console.log('Forwarding SYNC_RESPONSE to', request.targetUserId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'SYNC_RESPONSE',
+        to: request.targetUserId,
+        currentTime: request.currentTime,
+        isPlaying: request.isPlaying,
+        fromUserId: userId
+      }));
+    }
     sendResponse({ success: true });
   }
 
@@ -345,6 +368,30 @@ async function handleSignalingMessage(data) {
             type: 'APPLY_URL_CHANGE', 
             url: message.url,
             fromUserId: message.userId 
+          }).catch(() => {});
+        });
+      });
+    }
+
+    if (message.type === 'REQUEST_SYNC' && message.userId !== userId) {
+      chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'HANDLE_REQUEST_SYNC', 
+            fromUserId: message.userId 
+          }).catch(() => {});
+        });
+      });
+    }
+
+    if (message.type === 'SYNC_RESPONSE' && message.to === userId) {
+      chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'APPLY_SYNC_RESPONSE', 
+            currentTime: message.currentTime,
+            isPlaying: message.isPlaying,
+            fromUserId: message.fromUserId 
           }).catch(() => {});
         });
       });

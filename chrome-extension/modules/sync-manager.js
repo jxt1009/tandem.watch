@@ -17,6 +17,9 @@ export class SyncManager {
     
     // Context for passive sync
     this.lastUserInteractionAt = 0;
+    
+    // Initialization state
+    this.isInitialized = false;
   }
 
   // ---- Public lifecycle -------------------------------------------------
@@ -29,13 +32,23 @@ export class SyncManager {
         return;
       }
 
-      // Startup Grace Period: Ignore all local events for 5 seconds
-      // This prevents the initial "seek to 0" or auto-play from broadcasting
-      // and allows the restore logic to do its job without interference.
-      this.suppressLocalUntil = Date.now() + 5000;
+      // Reset initialization state
+      this.isInitialized = false;
+      
+      // Request initial state from peers
+      console.log('[SyncManager] Requesting initial sync state from peers...');
+      this.state.safeSendMessage({ type: 'REQUEST_SYNC' });
+
+      // Fallback: If no response within 2s, assume we are alone or first, and unlock.
+      setTimeout(() => {
+        if (!this.isInitialized) {
+          console.log('[SyncManager] No sync response received (timeout). Assuming self-authority.');
+          this.isInitialized = true;
+        }
+      }, 2000);
 
       this.attachEventListeners(video);
-      console.log('[SyncManager] Setup complete. Local events suppressed for 5s.');
+      console.log('[SyncManager] Setup complete. Waiting for sync response...');
     } catch (err) {
       console.error('[SyncManager] Error setting up playback sync:', err);
     }
@@ -82,6 +95,12 @@ export class SyncManager {
     // Unified handler for user interactions
     const handleLocalEvent = (e) => {
       if (!this.state.isActive()) return;
+
+      // Ignore events until we are initialized (synced with room)
+      if (!this.isInitialized) {
+        console.log(`[SyncManager] Suppressed local ${e.type} (waiting for init)`);
+        return;
+      }
 
       const now = Date.now();
       if (now < this.suppressLocalUntil) {
@@ -164,6 +183,47 @@ export class SyncManager {
   }
 
   // ---- Remote Command Handlers ------------------------------------------
+
+  async handleRequestSync(fromUserId) {
+    // Only respond if we are initialized and stable
+    if (!this.isInitialized) return;
+    
+    try {
+      const currentTime = await this.netflix.getCurrentTime();
+      const isPaused = await this.netflix.isPaused();
+      
+      console.log('[SyncManager] Sending SYNC_RESPONSE to', fromUserId);
+      this.state.safeSendMessage({
+        type: 'SYNC_RESPONSE',
+        targetUserId: fromUserId,
+        currentTime: currentTime / 1000,
+        isPlaying: !isPaused
+      });
+    } catch (e) {
+      console.error('[SyncManager] Error handling sync request:', e);
+    }
+  }
+
+  async handleSyncResponse(currentTime, isPlaying, fromUserId) {
+    if (this.isInitialized) {
+      console.log('[SyncManager] Received late SYNC_RESPONSE, ignoring.');
+      return;
+    }
+
+    console.log('[SyncManager] Received initial state from', fromUserId, 'Time:', currentTime, 'Playing:', isPlaying);
+    
+    // Apply the state immediately
+    this.isInitialized = true; // Mark initialized so we can apply actions
+    
+    // Use the standard remote application logic (locks local events)
+    await this._applyRemoteAction('initial-sync', 2000, async () => {
+      await this.netflix.seek(currentTime * 1000);
+      
+      const localPaused = await this.netflix.isPaused();
+      if (isPlaying && localPaused) await this.netflix.play();
+      else if (!isPlaying && !localPaused) await this.netflix.pause();
+    });
+  }
 
   // Helper to lock local events while applying remote changes
   async _applyRemoteAction(actionName, lockDurationMs, actionFn) {

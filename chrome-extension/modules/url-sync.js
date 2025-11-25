@@ -27,7 +27,8 @@ export class URLSync {
     // Persist basic party info; playback state will be updated separately by content-script
     const existing = this.getRestorationState() || {};
     const payload = {
-      userId: state.userId,
+      // We intentionally DO NOT save userId anymore to force a fresh identity on reload
+      // userId: state.userId, 
       roomId: state.roomId,
       // keep any playback info that may have been written just before navigation
       currentTime: existing.currentTime || null,

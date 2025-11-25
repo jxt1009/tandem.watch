@@ -35,8 +35,8 @@ let localStream = null;
       console.log('Triggering party reset and restoration...');
       chrome.runtime.sendMessage({
         type: 'RESTORE_PARTY',
-        roomId: restorationState.roomId,
-        userId: restorationState.userId
+        roomId: restorationState.roomId
+        // userId is omitted to force a fresh ID generation
       });
       
       // Clear restoration flag after party is restored
@@ -250,7 +250,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         .then((playback) => {
           const existing = urlSync.getRestorationState() || {};
           const payload = {
-            userId: state.userId,
+            // userId: state.userId, // Do not save userId
             roomId: state.roomId,
             currentTime: playback.currentTime != null ? playback.currentTime : existing.currentTime || null,
             isPlaying: typeof playback.isPlaying === 'boolean' ? playback.isPlaying : (typeof existing.isPlaying === 'boolean' ? existing.isPlaying : null),
@@ -269,6 +269,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // This will cause a page reload, but state will be restored automatically
     window.location.href = request.url;
     
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'HANDLE_REQUEST_SYNC') {
+    syncManager.handleRequestSync(request.fromUserId);
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'APPLY_SYNC_RESPONSE') {
+    syncManager.handleSyncResponse(request.currentTime, request.isPlaying, request.fromUserId);
     sendResponse({ success: true });
   }
 });
