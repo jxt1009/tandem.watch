@@ -21,7 +21,7 @@ let leaderLockTimeout = null;
 
 // URL monitoring - track when user navigates to different shows
 let lastKnownUrl = window.location.href;
-let applyingRemoteUrlChange = false; // prevent echo when we navigate due to remote command
+let restoringPartyState = false; // prevent URL broadcast during restoration
 
 // Check if we need to restore party state after navigation
 (function checkRestorePartyState() {
@@ -30,6 +30,9 @@ let applyingRemoteUrlChange = false; // prevent echo when we navigate due to rem
     try {
       const state = JSON.parse(partyState);
       console.log('Detected party state after navigation, will restore:', state);
+      
+      // Set flag to prevent URL broadcast during restoration
+      restoringPartyState = true;
       
       // Clear the stored state
       sessionStorage.removeItem('toperparty_state');
@@ -41,10 +44,17 @@ let applyingRemoteUrlChange = false; // prevent echo when we navigate due to rem
           roomId: state.roomId,
           userId: state.userId
         });
+        
+        // Clear restoration flag after party is restored
+        setTimeout(function() {
+          restoringPartyState = false;
+          console.log('Party restoration complete, URL monitoring active');
+        }, 2000);
       }, 1000); // Wait 1s for page to stabilize
     } catch (e) {
       console.error('Failed to restore party state:', e);
       sessionStorage.removeItem('toperparty_state');
+      restoringPartyState = false;
     }
   }
 })();
@@ -176,8 +186,8 @@ function startUrlMonitoring() {
   setInterval(function checkUrlChange() {
     const currentUrl = window.location.href;
     
-    // Check if URL changed and party is active
-    if (currentUrl !== lastKnownUrl && partyActive && !applyingRemoteUrlChange) {
+    // Check if URL changed and party is active (but not during restoration)
+    if (currentUrl !== lastKnownUrl && partyActive && !restoringPartyState) {
       console.log('URL changed from', lastKnownUrl, 'to', currentUrl);
       lastKnownUrl = currentUrl;
       
@@ -186,6 +196,9 @@ function startUrlMonitoring() {
         type: 'URL_CHANGE',
         url: currentUrl
       });
+    } else if (!restoringPartyState) {
+      // Silently update lastKnownUrl if we're not in restoration mode
+      lastKnownUrl = currentUrl;
     }
   }, 500); // Check every 500ms
 }
@@ -347,7 +360,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       // Only sync if times differ significantly (avoid constant micro-adjustments and stuttering)
       // Use 2 second threshold - small drifts are acceptable, only correct large desync
-      if (timeDiff > 2000) { // 2 second threshold
+      if (timeDiff > 1000) { // 2 second threshold
         console.log('Syncing time - diff was', (timeDiff / 1000).toFixed(1), 'seconds');
         NetflixPlayer.seek(requestedTime);
       } else if (timeDiff > 500) {
@@ -389,47 +402,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'APPLY_URL_CHANGE') {
     console.log('Applying URL change from remote user:', request.url, 'from user:', request.fromUserId);
     
-    const currentUrl = window.location.href;
-    
-    // Check if this is just a watch page parameter change (same base path)
-    const currentIsWatch = currentUrl.includes('/watch/');
-    const newIsWatch = request.url.includes('/watch/');
-    
-    // Set flag to prevent echo
-    applyingRemoteUrlChange = true;
-    
-    if (currentIsWatch && newIsWatch) {
-      // Both are watch pages - use history API for soft navigation (preserves state)
-      console.log('Using soft navigation (history.pushState)');
-      window.history.pushState({}, '', request.url);
-      
-      // Trigger Netflix's router to detect the change
-      window.dispatchEvent(new PopStateEvent('popstate'));
-      
-      // Reset flag after a delay
-      setTimeout(function() {
-        applyingRemoteUrlChange = false;
-        lastKnownUrl = request.url;
-      }, 1000);
-    } else {
-      // Navigating to/from browse pages - need hard navigation
-      console.log('Using hard navigation (page reload)');
-      
-      // Save party state before navigation so we can restore after reload
-      if (partyActive && userId && roomId) {
-        const stateToSave = {
-          roomId: roomId,
-          userId: userId,
-          navigatedFrom: window.location.href,
-          timestamp: Date.now()
-        };
-        sessionStorage.setItem('toperparty_state', JSON.stringify(stateToSave));
-        console.log('Saved party state before navigation');
-      }
-      
-      // Navigate to the new URL
-      window.location.href = request.url;
+    // Save party state before navigation so we can restore after reload
+    if (partyActive && userId && roomId) {
+      const stateToSave = {
+        roomId: roomId,
+        userId: userId,
+        navigatedFrom: window.location.href,
+        timestamp: Date.now()
+      };
+      sessionStorage.setItem('toperparty_state', JSON.stringify(stateToSave));
+      console.log('Saved party state before navigation');
     }
+    
+    // Always use hard navigation to ensure Netflix properly loads the new video
+    // This will cause a page reload, but state will be restored automatically
+    window.location.href = request.url;
     
     sendResponse({ success: true });
   }
