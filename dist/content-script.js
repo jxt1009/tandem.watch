@@ -220,6 +220,7 @@ class SyncManager {
     this.suppressBroadcast = false; // Flag to suppress broadcasting when we control video programmatically
     this.expectedEvents = new Set(); // Track which events we're expecting from programmatic control
     this.lastProgrammaticSeekAt = 0; // Track when we last did a programmatic seek
+    this.lastRemoteCommandAt = 0; // Track when we last received ANY remote command
   }
   
   // Setup playback synchronization
@@ -354,12 +355,18 @@ class SyncManager {
       
       const now = Date.now();
       
-      // Only send every 5 seconds (be conservative)
-      if (now - lastSentAt < 5000) return;
+      // Only send every 10 seconds (be very conservative)
+      if (now - lastSentAt < 10000) return;
       
-      // Don't send if user seeked recently (within 5 seconds)
-      if (now - lastUserSeekAt < 5000) {
+      // Don't send if user seeked recently (within 10 seconds)
+      if (now - lastUserSeekAt < 10000) {
         console.log('[Passive sync] Skipping send - user seeked recently');
+        return;
+      }
+      
+      // Don't send if we received a remote command recently (within 10 seconds)
+      if (now - this.lastRemoteCommandAt < 10000) {
+        console.log('[Passive sync] Skipping send - remote command received recently');
         return;
       }
       
@@ -414,6 +421,9 @@ class SyncManager {
   async handlePlaybackControl(control, fromUserId) {
     console.log('[Remote command] Received', control, 'from', fromUserId);
     
+    // Record that we received a remote command (suppress passive sync for 5s)
+    this.lastRemoteCommandAt = Date.now();
+    
     // Mark that we expect this event
     this.expectedEvents.add(control); // 'play' or 'pause'
     console.log('[Remote command] Added expected event:', control);
@@ -442,6 +452,9 @@ class SyncManager {
     const requestedTime = currentTime * 1000; // Convert to ms
     
     try {
+      // Record that we received a remote command (suppress passive sync for 5s)
+      this.lastRemoteCommandAt = Date.now();
+      
       // Mark that we expect a seeked event AND record the timestamp
       this.expectedEvents.add('seeked');
       this.lastProgrammaticSeekAt = Date.now();
