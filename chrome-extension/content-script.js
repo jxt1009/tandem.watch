@@ -878,14 +878,19 @@ async function handleSignalingMessage(message) {
   if (type === 'JOIN' && from && from !== userId) {
     // Another user joined the room — initiate P2P if we have local media
     if (!peerConnections.has(from)) {
-      const pc = createPeerConnection(from);
-      peerConnections.set(from, pc);
-      if (localStream) {
-        localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+      try {
+        const pc = createPeerConnection(from);
+        peerConnections.set(from, pc);
+        if (localStream) {
+          localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+        }
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ type: 'OFFER', from: userId, to: from, offer: pc.localDescription });
+      } catch (err) {
+        console.error('Error handling JOIN and creating offer:', err);
+        peerConnections.delete(from);
       }
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      sendSignal({ type: 'OFFER', from: userId, to: from, offer: pc.localDescription });
     }
     return;
   }
@@ -893,25 +898,55 @@ async function handleSignalingMessage(message) {
   if (type === 'OFFER' && message.offer && from && from !== userId) {
     // Received an offer from a peer
     let pc = peerConnections.get(from);
+    
+    // If connection exists and is not in a good state for receiving an offer, close and recreate
+    if (pc) {
+      const state = pc.signalingState;
+      if (state !== 'stable' && state !== 'closed') {
+        console.warn('Received offer while in signaling state:', state, '- recreating connection');
+        try {
+          pc.close();
+        } catch (e) {}
+        peerConnections.delete(from);
+        pc = null;
+      }
+    }
+    
     if (!pc) {
       pc = createPeerConnection(from);
       peerConnections.set(from, pc);
     }
 
-    await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
-    if (localStream) {
-      localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
+      if (localStream) {
+        localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+      }
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal({ type: 'ANSWER', from: userId, to: from, answer: pc.localDescription });
+    } catch (err) {
+      console.error('Error handling offer:', err);
+      // Clean up failed connection
+      peerConnections.delete(from);
+      try { pc.close(); } catch (e) {}
     }
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    sendSignal({ type: 'ANSWER', from: userId, to: from, answer: pc.localDescription });
     return;
   }
 
   if (type === 'ANSWER' && message.answer && from && from !== userId) {
     const pc = peerConnections.get(from);
     if (pc) {
-      await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+      try {
+        // Check if we're expecting an answer
+        if (pc.signalingState === 'have-local-offer') {
+          await pc.setRemoteDescription(new RTCSessionDescription(message.answer));
+        } else {
+          console.warn('Received answer in unexpected state:', pc.signalingState);
+        }
+      } catch (err) {
+        console.error('Error handling answer:', err);
+      }
     }
     return;
   }
