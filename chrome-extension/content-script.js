@@ -7,6 +7,7 @@ let localStream = null;
 let localPreviewVideo = null;
 const peerConnections = new Map();
 const remoteVideos = new Map();
+const remoteStreams = new Map();
 
 // Find Netflix video player
 function getVideoElement() {
@@ -29,12 +30,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then((stream) => {
         localStream = stream;
         console.log('Media stream obtained in content script');
+        
+        // Monitor stream tracks for unexpected ending
+        stream.getTracks().forEach(function(track) {
+          console.log('Local stream track obtained:', track.kind, 'id=', track.id, 'readyState=', track.readyState);
+          track.onended = function() {
+            console.error('LOCAL STREAM TRACK ENDED UNEXPECTEDLY:', track.kind, 'id=', track.id);
+          };
+          track.onmute = function() {
+            console.warn('Local stream track muted:', track.kind);
+          };
+          track.onunmute = function() {
+            console.log('Local stream track unmuted:', track.kind);
+          };
+        });
+        
         // Create or update local preview
         attachLocalPreview(stream);
-        // add tracks to any existing peer connections
-        peerConnections.forEach((pc) => {
-          try { stream.getTracks().forEach(t => pc.addTrack(t, stream)); } catch (e) {}
-        });
+          // add or replace tracks to any existing peer connections
+          peerConnections.forEach((pc) => {
+            try { stream.getTracks().forEach(t => addOrReplaceTrack(pc, t, stream)); } catch (e) { console.warn('Error adding tracks to pc', e); }
+          });
         sendResponse({ success: true, message: 'Media stream obtained' });
       })
       .catch((err) => {
@@ -121,22 +137,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Setup playback synchronization
 function setupPlaybackSync() {
   // Wait for the Netflix <video> element to be present, then attach listeners
-  waitForVideo().then((video) => {
+  waitForVideo().then(function onVideoReady(video) {
     if (!video) {
       console.warn('Netflix video element not found after wait');
       return;
     }
 
     // Track play/pause events
-    const onPlay = () => {
+    const onPlay = function handlePlayEvent() {
       if (partyActive) {
-        chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'play', timestamp: video.currentTime }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'play', timestamp: video.currentTime }).catch(function() {});
       }
     };
 
-    const onPause = () => {
+    const onPause = function handlePauseEvent() {
       if (partyActive) {
-        chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'pause', timestamp: video.currentTime }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'PLAY_PAUSE', control: 'pause', timestamp: video.currentTime }).catch(function() {});
       }
     };
 
@@ -145,20 +161,20 @@ function setupPlaybackSync() {
 
     // Throttled timeupdate sender (every ~1s at most)
     let lastSentAt = 0;
-    const onTimeUpdate = () => {
+    const onTimeUpdate = function handleTimeUpdate() {
       if (!partyActive) return;
       const now = Date.now();
       if (now - lastSentAt < 1000) return; // throttle to ~1s
       lastSentAt = now;
-      chrome.runtime.sendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused }).catch(() => {});
+      chrome.runtime.sendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused }).catch(function() {});
     };
 
     video.addEventListener('timeupdate', onTimeUpdate);
 
     // Periodic fallback sync (every 5 seconds)
-    window.playbackSyncInterval = setInterval(() => {
+    window.playbackSyncInterval = setInterval(function syncPlaybackPeriodic() {
       if (partyActive && video) {
-        chrome.runtime.sendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused }).catch(() => {});
+        chrome.runtime.sendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused }).catch(function() {});
       }
     }, 5000);
 
@@ -166,7 +182,7 @@ function setupPlaybackSync() {
     window.__toperparty_video_listeners = { onPlay, onPause, onTimeUpdate, video };
 
     console.log('Playback sync setup complete');
-  }).catch((err) => {
+  }).catch(function onVideoWaitError(err) {
     console.error('Error waiting for video element:', err);
   });
 }
@@ -288,22 +304,50 @@ function attachLocalPreview(stream) {
     // Ensure the video element starts playing (muted allows autoplay in most browsers)
     v.play().catch(() => {});
   } catch (e) {}
+
+  // Log track states and attach ended listeners for debugging
+  try {
+    if (stream && stream.getTracks) {
+      stream.getTracks().forEach((t) => {
+        console.log('Local track:', t.kind, 'readyState=', t.readyState);
+        t.onended = () => console.warn('Local track ended:', t.kind);
+      });
+    }
+  } catch (e) {}
+
   console.log('Attached local preview, tracks=', (stream && stream.getTracks) ? stream.getTracks().length : 0);
 }
 
 function removeLocalPreview() {
   if (localPreviewVideo) {
     try {
-      // stop preview tracks if they've not been stopped already
+      // Do NOT stop the captured stream's tracks here - stopping the preview
+      // element should not stop the camera/mic itself. Clearing the srcObject
+      // prevents the element from holding the stream reference.
       if (localPreviewVideo.srcObject) {
-        const s = localPreviewVideo.srcObject;
-        if (s.getTracks) s.getTracks().forEach(t => t.stop());
+        try { localPreviewVideo.srcObject = null; } catch (e) {}
       }
-    } catch (e) {
-      // ignore
-    }
-    localPreviewVideo.remove();
+    } catch (e) {}
+    try { localPreviewVideo.remove(); } catch (e) {}
     localPreviewVideo = null;
+  }
+}
+
+// Add or replace a track on an RTCPeerConnection to avoid duplicate senders
+function addOrReplaceTrack(pc, track, stream) {
+  try {
+    const kind = track.kind;
+    const sender = pc.getSenders().find(s => s.track && s.track.kind === kind);
+    if (sender) {
+      // replace existing track
+      sender.replaceTrack(track);
+      console.log('Replaced sender track for kind', kind);
+    } else {
+      pc.addTrack(track, stream);
+      console.log('Added sender track for kind', kind);
+    }
+  } catch (e) {
+    console.warn('addOrReplaceTrack failed', e);
   }
 }
 
@@ -364,7 +408,7 @@ async function handleSignalingMessage(message) {
       const pc = createPeerConnection(from);
       peerConnections.set(from, pc);
       if (localStream) {
-        localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+        localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
       }
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -383,7 +427,7 @@ async function handleSignalingMessage(message) {
 
     await pc.setRemoteDescription(new RTCSessionDescription(message.offer));
     if (localStream) {
-      localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+      localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
     }
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -438,9 +482,29 @@ function createPeerConnection(peerId) {
   };
 
   pc.ontrack = (event) => {
-    console.log('Received remote track from', peerId);
-    const stream = event.streams && event.streams[0];
-    if (stream) addRemoteVideo(peerId, stream);
+    console.log('Received remote track from', peerId, 'track=', event.track && event.track.kind);
+    // Some browsers populate event.streams[0], others deliver individual tracks.
+    let stream = (event.streams && event.streams[0]) || remoteStreams.get(peerId);
+    if (!stream) {
+      stream = new MediaStream();
+      remoteStreams.set(peerId, stream);
+    }
+    if (event.track) {
+      try { 
+        stream.addTrack(event.track);
+        // Monitor track state
+        event.track.onended = function() {
+          console.warn('Remote track ended from', peerId, 'kind=', event.track.kind);
+        };
+        console.log('Added remote track to stream, kind=', event.track.kind, 'readyState=', event.track.readyState);
+      } catch (e) { 
+        console.warn('Failed to add remote track to stream', e); 
+      }
+    }
+    // Only create the video element once, not on every track
+    if (!remoteVideos.has(peerId)) {
+      addRemoteVideo(peerId, stream);
+    }
   };
 
   pc.onconnectionstatechange = () => {
@@ -460,6 +524,8 @@ function addRemoteVideo(peerId, stream) {
   v.id = 'toperparty-remote-' + peerId;
   v.autoplay = true;
   v.playsInline = true;
+  // Mute remote by default so autoplay will start the video; user can unmute if desired.
+  v.muted = true;
   v.style.position = 'fixed';
   v.style.bottom = '20px';
   v.style.right = (20 + (remoteVideos.size * 180)) + 'px';
@@ -475,20 +541,26 @@ function addRemoteVideo(peerId, stream) {
   }
   document.body.appendChild(v);
   remoteVideos.set(peerId, v);
+  try {
+    v.play().catch(err => console.warn('Remote video play() failed:', err));
+  } catch (e) {}
 }
 
 function removeRemoteVideo(peerId) {
   const v = remoteVideos.get(peerId);
   if (v) {
     try {
+      // Do NOT stop remote tracks - they are managed by the sender
+      // Just clear the srcObject to release the reference
       if (v.srcObject) {
-        const s = v.srcObject;
-        if (s.getTracks) s.getTracks().forEach(t => t.stop());
+        v.srcObject = null;
       }
     } catch (e) {}
     v.remove();
     remoteVideos.delete(peerId);
   }
+  // Also clean up the stream reference
+  remoteStreams.delete(peerId);
 }
 
 // Done
