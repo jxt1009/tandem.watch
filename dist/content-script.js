@@ -218,6 +218,7 @@ class SyncManager {
     this.listeners = null;
     this.syncInterval = null;
     this.suppressBroadcast = false; // Flag to suppress broadcasting when we control video programmatically
+    this.expectedEvents = new Set(); // Track which events we're expecting from programmatic control
   }
   
   // Setup playback synchronization
@@ -260,13 +261,14 @@ class SyncManager {
   attachEventListeners(video) {
     // Play event - broadcast to peers ONLY if it's a user action
     const onPlay = () => {
-      console.log('[Play event] Fired - suppressBroadcast:', this.suppressBroadcast, 'partyActive:', this.state.isActive());
+      console.log('[Play event] Fired - expectedEvents:', Array.from(this.expectedEvents), 'partyActive:', this.state.isActive());
       
       if (!this.state.isActive()) return;
       
-      // If we're programmatically controlling, don't broadcast
-      if (this.suppressBroadcast) {
-        console.log('[Play event] ✓ Suppressed - programmatic control');
+      // If this is an expected programmatic event, consume it and don't broadcast
+      if (this.expectedEvents.has('play')) {
+        this.expectedEvents.delete('play');
+        console.log('[Play event] ✓ Suppressed - programmatic control (expected event consumed)');
         return;
       }
       
@@ -280,13 +282,14 @@ class SyncManager {
     
     // Pause event - broadcast to peers ONLY if it's a user action
     const onPause = () => {
-      console.log('[Pause event] Fired - suppressBroadcast:', this.suppressBroadcast, 'partyActive:', this.state.isActive());
+      console.log('[Pause event] Fired - expectedEvents:', Array.from(this.expectedEvents), 'partyActive:', this.state.isActive());
       
       if (!this.state.isActive()) return;
       
-      // If we're programmatically controlling, don't broadcast
-      if (this.suppressBroadcast) {
-        console.log('[Pause event] ✓ Suppressed - programmatic control');
+      // If this is an expected programmatic event, consume it and don't broadcast
+      if (this.expectedEvents.has('pause')) {
+        this.expectedEvents.delete('pause');
+        console.log('[Pause event] ✓ Suppressed - programmatic control (expected event consumed)');
         return;
       }
       
@@ -301,13 +304,14 @@ class SyncManager {
     // Seek event - broadcast to peers ONLY if it's a user action
     const onSeeked = () => {
       const currentTime = video.currentTime;
-      console.log('[Seeked event] Fired - suppressBroadcast:', this.suppressBroadcast, 'partyActive:', this.state.isActive(), 'time:', currentTime);
+      console.log('[Seeked event] Fired - expectedEvents:', Array.from(this.expectedEvents), 'partyActive:', this.state.isActive(), 'time:', currentTime);
       
       if (!this.state.isActive()) return;
       
-      // If we're programmatically controlling, don't broadcast
-      if (this.suppressBroadcast) {
-        console.log('[Seeked event] ✓ Suppressed - programmatic control');
+      // If this is an expected programmatic event, consume it and don't broadcast
+      if (this.expectedEvents.has('seeked')) {
+        this.expectedEvents.delete('seeked');
+        console.log('[Seeked event] ✓ Suppressed - programmatic control (expected event consumed)');
         return;
       }
       
@@ -382,25 +386,15 @@ class SyncManager {
     }
   }
   
-  // Execute an action with broadcast suppression
-  async executeWithSuppression(actionFn) {
-    this.suppressBroadcast = true;
-    try {
-      await actionFn();
-    } finally {
-      // Keep suppression for a brief moment to ensure all events are caught
-      setTimeout(() => {
-        this.suppressBroadcast = false;
-      }, 100);
-    }
-  }
-  
   // Handle remote playback control commands (explicit play/pause)
   async handlePlaybackControl(control, fromUserId) {
     console.log('[Remote command] Received', control, 'from', fromUserId);
-    console.log('[Remote command] Setting suppressBroadcast=true');
     
-    await this.executeWithSuppression(async () => {
+    // Mark that we expect this event
+    this.expectedEvents.add(control); // 'play' or 'pause'
+    console.log('[Remote command] Added expected event:', control);
+    
+    try {
       if (control === 'play') {
         console.log('[Remote command] Executing play()...');
         await this.netflix.play();
@@ -410,19 +404,24 @@ class SyncManager {
         await this.netflix.pause();
         console.log('[Remote command] Pause completed');
       }
-    });
-    
-    console.log('[Remote command] suppressBroadcast=false (after 100ms delay)');
+    } catch (err) {
+      console.error('[Remote command] Error executing', control, err);
+      // Clean up expected event on error
+      this.expectedEvents.delete(control);
+    }
   }
   
   // Handle remote seek commands (explicit seek)
   async handleSeek(currentTime, isPlaying, fromUserId) {
     console.log('[Remote command] Received SEEK to', currentTime, 's from', fromUserId, 'isPlaying:', isPlaying);
-    console.log('[Remote command] Setting suppressBroadcast=true');
     
     const requestedTime = currentTime * 1000; // Convert to ms
     
-    await this.executeWithSuppression(async () => {
+    try {
+      // Mark that we expect a seeked event
+      this.expectedEvents.add('seeked');
+      console.log('[Remote command] Added expected event: seeked');
+      
       console.log('[Remote command] Executing seek(' + requestedTime + 'ms)...');
       await this.netflix.seek(requestedTime);
       console.log('[Remote command] Seek completed');
@@ -432,17 +431,21 @@ class SyncManager {
       console.log('[Remote command] Current state - isPaused:', isPaused);
       
       if (isPlaying && isPaused) {
+        this.expectedEvents.add('play');
         console.log('[Remote command] Need to resume - executing play()...');
         await this.netflix.play();
         console.log('[Remote command] Resumed after seek');
       } else if (!isPlaying && !isPaused) {
+        this.expectedEvents.add('pause');
         console.log('[Remote command] Need to pause - executing pause()...');
         await this.netflix.pause();
         console.log('[Remote command] Paused after seek');
       }
-    });
-    
-    console.log('[Remote command] suppressBroadcast=false (after 100ms delay)');
+    } catch (err) {
+      console.error('[Remote command] Error during seek:', err);
+      // Clean up expected events on error
+      this.expectedEvents.clear();
+    }
   }
   
   // Handle passive sync (drift correction only)
