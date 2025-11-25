@@ -421,7 +421,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     // Set remote user as leader with longer duration
     if (request.fromUserId) {
-      setRemoteLeader(request.fromUserId, 5000); // 5 second leader lock for seeks
+      setRemoteLeader(request.fromUserId, 3000); // 3 second leader lock for seeks (reduced from 5s)
     }
     
     // Set flag to prevent echo
@@ -527,7 +527,7 @@ function setupPlaybackSync() {
       if (partyActive && !applyingRemoteCommand && !isFollower()) {
         console.log('Local seek completed - broadcasting SEEK command to peers');
         lastSeekTime = Date.now(); // Track seek time to prevent counter-sync
-        becomeLeader(5000); // Hold leadership for 5 seconds after seeking
+        becomeLeader(3000); // Hold leadership for 3 seconds after seeking (reduced from 5s)
         // Use SEEK message type for explicit seeks (not SYNC_TIME)
         safeSendMessage({ type: 'SEEK', currentTime: video.currentTime, isPlaying: !video.paused });
       } else if (isFollower()) {
@@ -545,9 +545,12 @@ function setupPlaybackSync() {
       if (!partyActive || applyingRemoteCommand || isFollower()) return;
       
       // Don't send sync messages shortly after a seek (prevents fighting)
-      const timeSinceSeek = Date.now() - lastSeekTime;
-      if (timeSinceSeek < 5000) {
-        return; // Wait 5 seconds after any seek before sending sync
+      // Only block if lastSeekTime was actually set (not initial 0 value)
+      if (lastSeekTime > 0) {
+        const timeSinceSeek = Date.now() - lastSeekTime;
+        if (timeSinceSeek < 3000) {
+          return; // Wait 3 seconds after any seek before sending sync (reduced from 5s)
+        }
       }
       
       const now = Date.now();
@@ -562,9 +565,12 @@ function setupPlaybackSync() {
     window.playbackSyncInterval = setInterval(function syncPlaybackPeriodic() {
       if (partyActive && video && !applyingRemoteCommand && !isFollower()) {
         // Don't send sync messages shortly after a seek (prevents fighting)
-        const timeSinceSeek = Date.now() - lastSeekTime;
-        if (timeSinceSeek < 5000) {
-          return; // Wait 5 seconds after any seek before sending sync
+        // Only block if lastSeekTime was actually set (not initial 0 value)
+        if (lastSeekTime > 0) {
+          const timeSinceSeek = Date.now() - lastSeekTime;
+          if (timeSinceSeek < 3000) {
+            return; // Wait 3 seconds after any seek before sending sync (reduced from 5s)
+          }
         }
         
         safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
@@ -575,6 +581,15 @@ function setupPlaybackSync() {
     window.__toperparty_video_listeners = { onPlay, onPause, onSeeked, onTimeUpdate, video };
 
     console.log('Playback sync setup complete');
+    
+    // Send initial sync after setup to catch up others (especially after URL change)
+    // Wait a bit for video to initialize
+    setTimeout(function sendInitialSync() {
+      if (partyActive && video && !isFollower()) {
+        console.log('Sending initial sync after video setup');
+        safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
+      }
+    }, 2000);
   }).catch(function onVideoWaitError(err) {
     console.error('Error waiting for video element:', err);
   });
