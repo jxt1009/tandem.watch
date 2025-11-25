@@ -294,8 +294,8 @@ class SyncManager {
       
       // Don't send passive sync right after a local seek - prevents sending stale position
       const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
-      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 4000) {
-        return; // Suppress passive sync for 4s after local seek
+      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 6000) {
+        return; // Suppress passive sync for 6s after local seek
       }
       
       const now = Date.now();
@@ -320,8 +320,8 @@ class SyncManager {
       
       // Don't send passive sync right after a local seek - prevents sending stale position
       const timeSinceLocalAction = this.state.getTimeSinceLocalAction();
-      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 4000) {
-        return; // Suppress passive sync for 4s after local seek
+      if (this.state.lastLocalAction.type === 'seek' && timeSinceLocalAction < 6000) {
+        return; // Suppress passive sync for 6s after local seek
       }
       
       this.state.safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
@@ -418,13 +418,13 @@ class SyncManager {
       const lastActionType = this.state.lastLocalAction.type;
       const lastRemoteActionType = this.state.lastRemoteAction.type;
       
-      // Long protection window after explicit seeks (local OR remote) to prevent feedback loops
-      if (lastActionType === 'seek' && timeSinceLocalAction < 4000) {
+      // Very long protection window after explicit seeks to prevent ANY passive sync interference
+      if (lastActionType === 'seek' && timeSinceLocalAction < 6000) {
         console.log('Ignoring passive sync - recent local seek:', timeSinceLocalAction, 'ms ago');
         return;
       }
       
-      if (lastRemoteActionType === 'seek' && timeSinceRemoteAction < 4000) {
+      if (lastRemoteActionType === 'seek' && timeSinceRemoteAction < 6000) {
         console.log('Ignoring passive sync - recent remote seek:', timeSinceRemoteAction, 'ms ago');
         return;
       }
@@ -435,8 +435,9 @@ class SyncManager {
         return;
       }
       
-      // Only sync time if difference is significant (>3s) - raised from 2s to prevent oscillation
-      if (timeDiff > 3000) {
+      // MUCH higher threshold - passive sync is ONLY for fixing real drift, not normal playback differences
+      // Increased to 5 seconds to avoid interfering with seeks
+      if (timeDiff > 5000) {
         console.log('Passive sync: diff was', (timeDiff / 1000).toFixed(1), 's - correcting');
         await this.netflix.seek(requestedTime);
         this.state.recordLocalAction('seek');
