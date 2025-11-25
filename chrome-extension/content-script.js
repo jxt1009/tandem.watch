@@ -233,9 +233,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       const requestedTime = request.currentTime * 1000; // Convert to ms
       const timeDiff = Math.abs(currentTime - requestedTime);
       
-      // Only sync if times differ significantly (avoid constant micro-adjustments)
-      if (timeDiff > 500) { // 500ms threshold
+      // Only sync if times differ significantly (avoid constant micro-adjustments and stuttering)
+      // Use 2 second threshold - small drifts are acceptable, only correct large desync
+      if (timeDiff > 2000) { // 2 second threshold
+        console.log('Syncing time - diff was', (timeDiff / 1000).toFixed(1), 'seconds');
         NetflixPlayer.seek(requestedTime);
+      } else if (timeDiff > 500) {
+        console.log('Time diff', (timeDiff / 1000).toFixed(1), 's - within acceptable range, not seeking');
       }
       
       // Handle play/pause state
