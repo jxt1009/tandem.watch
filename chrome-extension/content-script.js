@@ -17,6 +17,9 @@ let applyingRemoteCommand = false;
 // Track last explicit play/pause command to avoid sync overriding it
 let lastPlayPauseCommand = null; // { action: 'play'|'pause', timestamp: Date.now() }
 
+// Track last seek to prevent immediate counter-syncs
+let lastSeekTime = 0; // timestamp of last seek (local or remote)
+
 // Leader lock - when someone is actively controlling, others become followers
 let currentLeader = null; // userId of current leader
 let leaderLockTimeout = null;
@@ -138,30 +141,32 @@ function safeSendMessage(message, callback) {
 }
 
 // Leader lock helpers - prevent control conflicts
-function becomeLeader() {
+function becomeLeader(durationMs) {
+  const duration = durationMs || 2000; // Default 2 seconds, can be overridden
   currentLeader = userId;
   if (leaderLockTimeout) clearTimeout(leaderLockTimeout);
-  // Hold leadership for 2 seconds after last action
+  // Hold leadership for specified duration
   leaderLockTimeout = setTimeout(function() {
     currentLeader = null;
     console.log('Leadership released');
-  }, 2000);
-  console.log('Became leader - others will follow for 2s');
+  }, duration);
+  console.log('Became leader - others will follow for', duration, 'ms');
 }
 
-function setRemoteLeader(remoteUserId) {
+function setRemoteLeader(remoteUserId, durationMs) {
+  const duration = durationMs || 2500; // Default 2.5 seconds
   if (currentLeader !== remoteUserId) {
-    console.log('Remote user', remoteUserId, 'became leader');
+    console.log('Remote user', remoteUserId, 'became leader for', duration, 'ms');
   }
   currentLeader = remoteUserId;
   if (leaderLockTimeout) clearTimeout(leaderLockTimeout);
-  // Auto-release remote leadership after 2.5s of inactivity
+  // Auto-release remote leadership after duration
   leaderLockTimeout = setTimeout(function() {
     if (currentLeader === remoteUserId) {
       currentLeader = null;
       console.log('Remote leadership expired');
     }
-  }, 2500);
+  }, duration);
 }
 
 function isFollower() {
@@ -411,9 +416,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'APPLY_SEEK') {
     console.log('Applying SEEK command from remote user:', request.currentTime, 'from user:', request.fromUserId);
     
-    // Set remote user as leader
+    // Track seek time to prevent counter-sync
+    lastSeekTime = Date.now();
+    
+    // Set remote user as leader with longer duration
     if (request.fromUserId) {
-      setRemoteLeader(request.fromUserId);
+      setRemoteLeader(request.fromUserId, 5000); // 5 second leader lock for seeks
     }
     
     // Set flag to prevent echo
@@ -518,7 +526,8 @@ function setupPlaybackSync() {
     const onSeeked = function handleSeekedEvent() {
       if (partyActive && !applyingRemoteCommand && !isFollower()) {
         console.log('Local seek completed - broadcasting SEEK command to peers');
-        becomeLeader();
+        lastSeekTime = Date.now(); // Track seek time to prevent counter-sync
+        becomeLeader(5000); // Hold leadership for 5 seconds after seeking
         // Use SEEK message type for explicit seeks (not SYNC_TIME)
         safeSendMessage({ type: 'SEEK', currentTime: video.currentTime, isPlaying: !video.paused });
       } else if (isFollower()) {
@@ -534,6 +543,13 @@ function setupPlaybackSync() {
     let lastSentAt = 0;
     const onTimeUpdate = function handleTimeUpdate() {
       if (!partyActive || applyingRemoteCommand || isFollower()) return;
+      
+      // Don't send sync messages shortly after a seek (prevents fighting)
+      const timeSinceSeek = Date.now() - lastSeekTime;
+      if (timeSinceSeek < 5000) {
+        return; // Wait 5 seconds after any seek before sending sync
+      }
+      
       const now = Date.now();
       if (now - lastSentAt < 1000) return; // throttle to ~1s
       lastSentAt = now;
@@ -545,6 +561,12 @@ function setupPlaybackSync() {
     // Periodic fallback sync (every 5 seconds)
     window.playbackSyncInterval = setInterval(function syncPlaybackPeriodic() {
       if (partyActive && video && !applyingRemoteCommand && !isFollower()) {
+        // Don't send sync messages shortly after a seek (prevents fighting)
+        const timeSinceSeek = Date.now() - lastSeekTime;
+        if (timeSinceSeek < 5000) {
+          return; // Wait 5 seconds after any seek before sending sync
+        }
+        
         safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
       }
     }, 5000);
