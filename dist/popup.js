@@ -19,6 +19,7 @@ const partyInfo = document.getElementById('party-info');
 const videoSection = document.getElementById('video-section');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+const resetBtn = document.getElementById('reset-btn');
 const roomInput = document.getElementById('room-input');
 const roomDisplay = document.getElementById('room-display');
 const userDisplay = document.getElementById('user-display');
@@ -34,6 +35,7 @@ startStatusPolling();
 function setupEventListeners() {
   startBtn.addEventListener('click', startParty);
   stopBtn.addEventListener('click', stopParty);
+  resetBtn.addEventListener('click', resetParty);
   copyRoomBtn.addEventListener('click', copyRoomId);
 }
 
@@ -64,6 +66,7 @@ function updateUI() {
     controlsSection.classList.remove('hidden');
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
+    resetBtn.classList.remove('hidden');
     partyInfo.classList.remove('hidden');
     //videoSection.classList.remove('hidden');
     roomDisplay.textContent = roomId;
@@ -77,6 +80,7 @@ function updateUI() {
     controlsSection.classList.remove('hidden');
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
+    resetBtn.classList.add('hidden');
     partyInfo.classList.add('hidden');
     videoSection.classList.add('hidden');
     localVideo.srcObject = null;
@@ -114,6 +118,30 @@ function stopParty() {
   chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
     roomInput.value = '';
     updateStatus();
+  });
+}
+
+function resetParty() {
+  // Perform a full stop, then start again with the current roomId (if any)
+  const desiredRoomId = roomInput.value.trim() || status.roomId || undefined;
+
+  resetBtn.disabled = true;
+  statusText.textContent = '♻️ Resetting...';
+
+  chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
+    chrome.runtime.sendMessage(
+      { type: 'START_PARTY', roomId: desiredRoomId },
+      (response) => {
+        resetBtn.disabled = false;
+        if (response && response.success) {
+          setTimeout(updateStatus, 500);
+        } else {
+          const errMsg = response && response.error ? response.error : 'Unknown error';
+          alert('Error resetting party: ' + errMsg);
+          statusText.textContent = '🔴 Disconnected';
+        }
+      }
+    );
   });
 }
 
