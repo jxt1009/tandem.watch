@@ -82,6 +82,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (request.type === 'SEEK') {
+    console.log('Broadcasting SEEK command:', request.currentTime);
+    broadcastMessage({
+      type: 'SEEK',
+      currentTime: request.currentTime,
+      isPlaying: request.isPlaying,
+      userId
+    });
+    sendResponse({ success: true });
+  }
+
   if (request.type === 'URL_CHANGE') {
     console.log('Broadcasting URL change:', request.url);
     broadcastMessage({
@@ -286,6 +297,20 @@ async function handleSignalingMessage(data) {
         tabs.forEach(tab => {
           chrome.tabs.sendMessage(tab.id, { 
             type: 'APPLY_SYNC_PLAYBACK', 
+            currentTime: message.currentTime, 
+            isPlaying: message.isPlaying,
+            fromUserId: message.userId 
+          }).catch(() => {});
+        });
+      });
+    }
+
+    if (message.type === 'SEEK' && message.userId !== userId) {
+      console.log('Forwarding SEEK command from remote user');
+      chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'APPLY_SEEK', 
             currentTime: message.currentTime, 
             isPlaying: message.isPlaying,
             fromUserId: message.userId 

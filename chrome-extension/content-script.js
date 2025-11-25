@@ -369,7 +369,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       // Only sync if times differ significantly (avoid constant micro-adjustments and stuttering)
       // Use 2 second threshold - small drifts are acceptable, only correct large desync
-      if (timeDiff > 1000) { // 2 second threshold
+      if (timeDiff > 2000) { // 2 second threshold
         console.log('Syncing time - diff was', (timeDiff / 1000).toFixed(1), 'seconds');
         NetflixPlayer.seek(requestedTime);
       } else if (timeDiff > 500) {
@@ -405,6 +405,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       });
     });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'APPLY_SEEK') {
+    console.log('Applying SEEK command from remote user:', request.currentTime, 'from user:', request.fromUserId);
+    
+    // Set remote user as leader
+    if (request.fromUserId) {
+      setRemoteLeader(request.fromUserId);
+    }
+    
+    // Set flag to prevent echo
+    applyingRemoteCommand = true;
+    
+    // Always seek to the exact position (no threshold check for explicit seeks)
+    const requestedTime = request.currentTime * 1000; // Convert to ms
+    console.log('Seeking to', (requestedTime / 1000).toFixed(1), 'seconds (explicit seek from remote)');
+    
+    NetflixPlayer.seek(requestedTime).then(function() {
+      console.log('Remote seek completed');
+      
+      // Handle play/pause state
+      NetflixPlayer.isPaused().then(function(isPaused) {
+        if (request.isPlaying && isPaused) {
+          console.log('Resuming playback after seek');
+          NetflixPlayer.play().then(function() {
+            setTimeout(function() { applyingRemoteCommand = false; }, 200);
+          }).catch(function() {
+            applyingRemoteCommand = false;
+          });
+        } else if (!request.isPlaying && !isPaused) {
+          console.log('Pausing playback after seek');
+          NetflixPlayer.pause().then(function() {
+            setTimeout(function() { applyingRemoteCommand = false; }, 200);
+          }).catch(function() {
+            applyingRemoteCommand = false;
+          });
+        } else {
+          // Play state matches, just clear flag
+          setTimeout(function() { applyingRemoteCommand = false; }, 200);
+        }
+      });
+    }).catch(function(err) {
+      console.error('Failed to apply remote seek:', err);
+      applyingRemoteCommand = false;
+    });
+    
     sendResponse({ success: true });
   }
 
@@ -470,9 +517,10 @@ function setupPlaybackSync() {
     // Track seeking events to broadcast manual scrubbing
     const onSeeked = function handleSeekedEvent() {
       if (partyActive && !applyingRemoteCommand && !isFollower()) {
-        console.log('Local seek completed - broadcasting position to peers');
+        console.log('Local seek completed - broadcasting SEEK command to peers');
         becomeLeader();
-        safeSendMessage({ type: 'SYNC_TIME', currentTime: video.currentTime, isPlaying: !video.paused });
+        // Use SEEK message type for explicit seeks (not SYNC_TIME)
+        safeSendMessage({ type: 'SEEK', currentTime: video.currentTime, isPlaying: !video.paused });
       } else if (isFollower()) {
         console.log('Suppressing local seek event (following remote leader)');
       } else if (applyingRemoteCommand) {
