@@ -12,59 +12,12 @@ const remoteStreams = new Map();
 // Inject Netflix API access script into page context
 (function injectNetflixAPIHelper() {
   const script = document.createElement('script');
-  script.textContent = `
-    (function() {
-      // Netflix Player API Helper - runs in page context
-      window.__toperparty_netflix = {
-        getPlayer: function() {
-          try {
-            const videoPlayer = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-            const sessionId = videoPlayer.getAllPlayerSessionIds()[0];
-            return videoPlayer.getVideoPlayerBySessionId(sessionId);
-          } catch (e) {
-            console.warn('Failed to get Netflix player:', e);
-            return null;
-          }
-        },
-        
-        play: function() {
-          const player = this.getPlayer();
-          if (player) player.play();
-        },
-        
-        pause: function() {
-          const player = this.getPlayer();
-          if (player) player.pause();
-        },
-        
-        seek: function(timeMs) {
-          const player = this.getPlayer();
-          if (player) player.seek(timeMs);
-        },
-        
-        getCurrentTime: function() {
-          const player = this.getPlayer();
-          return player ? player.getCurrentTime() : 0;
-        },
-        
-        isPaused: function() {
-          const player = this.getPlayer();
-          return player ? player.isPaused() : true;
-        }
-      };
-      
-      // Listen for commands from content script
-      document.addEventListener('__toperparty_command', function(e) {
-        const { command, args } = e.detail;
-        if (window.__toperparty_netflix[command]) {
-          const result = window.__toperparty_netflix[command].apply(window.__toperparty_netflix, args || []);
-          document.dispatchEvent(new CustomEvent('__toperparty_response', { detail: { command, result } }));
-        }
-      });
-    })();
-  `;
+  script.src = chrome.runtime.getURL('netflix-api-bridge.js');
   (document.head || document.documentElement).appendChild(script);
-  script.remove();
+  script.onload = function() {
+    console.log('Netflix API bridge loaded');
+    script.remove();
+  };
 })();
 
 // Netflix API wrapper for content script
@@ -715,7 +668,7 @@ function addRemoteVideo(peerId, stream) {
   v.id = 'toperparty-remote-' + peerId;
   v.autoplay = true;
   v.playsInline = true;
-  // Mute remote by default so autoplay will start the video; user can unmute if desired.
+  // Start muted to allow autoplay, then unmute after playing
   v.muted = true;
   v.style.position = 'fixed';
   v.style.bottom = '20px';
@@ -725,6 +678,14 @@ function addRemoteVideo(peerId, stream) {
   v.style.zIndex = 10001;
   v.style.border = '2px solid #00aaff';
   v.style.borderRadius = '4px';
+  
+  // Log audio tracks for debugging
+  const audioTracks = stream.getAudioTracks();
+  console.log('Remote stream audio tracks:', audioTracks.length);
+  audioTracks.forEach(function(track) {
+    console.log('Audio track:', track.id, 'enabled=', track.enabled, 'readyState=', track.readyState);
+  });
+  
   try {
     v.srcObject = stream;
   } catch (e) {
@@ -732,9 +693,21 @@ function addRemoteVideo(peerId, stream) {
   }
   document.body.appendChild(v);
   remoteVideos.set(peerId, v);
+  
   try {
-    v.play().catch(err => console.warn('Remote video play() failed:', err));
-  } catch (e) {}
+    v.play().then(function() {
+      // Unmute after successful play to enable audio
+      console.log('Remote video playing, unmuting audio for', peerId);
+      v.muted = false;
+      v.volume = 1.0;
+    }).catch(function(err) {
+      console.warn('Remote video play() failed:', err);
+      // Try unmuting anyway
+      v.muted = false;
+    });
+  } catch (e) {
+    console.error('Exception calling play():', e);
+  }
 }
 
 function removeRemoteVideo(peerId) {
