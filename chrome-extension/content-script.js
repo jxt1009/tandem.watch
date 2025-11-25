@@ -81,6 +81,13 @@ function startUrlMonitoring() {
       } catch (e) {
         console.warn('Error sending LEAVE on beforeunload:', e);
       }
+
+      // Local, immediate cleanup to avoid dangling timers/PCs during unload
+      try {
+        webrtcManager.clearAll();
+      } catch (e) {
+        console.warn('Error clearing WebRTC state on beforeunload:', e);
+      }
     }
   });
   
