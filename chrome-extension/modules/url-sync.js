@@ -21,15 +21,21 @@ export class URLSync {
   }
   
   saveState() {
-    // Party state persistence logic will be moved here
     const state = this.stateManager.getState();
-    if (state.partyActive) {
-      sessionStorage.setItem('toperparty_restore', JSON.stringify({
-        userId: state.userId,
-        roomId: state.roomId,
-        timestamp: Date.now()
-      }));
-    }
+    if (!state.partyActive) return;
+
+    // Persist basic party info; playback state will be updated separately by content-script
+    const existing = this.getRestorationState() || {};
+    const payload = {
+      userId: state.userId,
+      roomId: state.roomId,
+      // keep any playback info that may have been written just before navigation
+      currentTime: existing.currentTime || null,
+      isPlaying: typeof existing.isPlaying === 'boolean' ? existing.isPlaying : null,
+      timestamp: Date.now()
+    };
+
+    sessionStorage.setItem('toperparty_restore', JSON.stringify(payload));
   }
   
   clearState() {

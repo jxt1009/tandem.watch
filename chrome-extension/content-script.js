@@ -169,8 +169,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Start monitoring URL changes
     startUrlMonitoring();
     
-    // Setup playback sync
-    syncManager.setup();
+    // Setup playback sync, then attempt to restore prior playback state (if any)
+    Promise.resolve(syncManager.setup())
+      .then(() => {
+        tryRestorePlaybackState();
+      })
+      .catch((err) => {
+        console.error('[ContentScript] Error setting up sync manager:', err);
+      });
     sendResponse({ success: true });
   }
 
@@ -227,8 +233,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Save party state before navigation so we can restore after reload
     const state = stateManager.getState();
     if (state.partyActive && state.userId && state.roomId) {
-      urlSync.saveState();
-      console.log('Saved party state before navigation');
+      // Capture approximate playback state so refreshed tab rejoins near same position
+      netflixController.getCurrentTime()
+        .then((ms) => {
+          const currentTime = ms != null ? ms / 1000 : null;
+          return netflixController.isPaused().then((paused) => ({ currentTime, isPlaying: !paused }));
+        })
+        .then((playback) => {
+          const existing = urlSync.getRestorationState() || {};
+          const payload = {
+            userId: state.userId,
+            roomId: state.roomId,
+            currentTime: playback.currentTime != null ? playback.currentTime : existing.currentTime || null,
+            isPlaying: typeof playback.isPlaying === 'boolean' ? playback.isPlaying : (typeof existing.isPlaying === 'boolean' ? existing.isPlaying : null),
+            timestamp: Date.now()
+          };
+          sessionStorage.setItem('toperparty_restore', JSON.stringify(payload));
+          console.log('Saved party + playback state before navigation', payload);
+        })
+        .catch((e) => {
+          console.warn('Failed to capture playback state before navigation, falling back to basic party state:', e);
+          urlSync.saveState();
+        });
     }
     
     // Always use hard navigation to ensure Netflix properly loads the new video
@@ -346,6 +372,48 @@ function startLocalStreamMonitor(stream) {
 
 function stopLocalStreamMonitor() {
   uiManager.clearStreamMonitorInterval();
+}
+
+// After RESTORE_PARTY and PARTY_STARTED, attempt to restore playback state
+// captured before navigation so the refreshed tab doesn't start from 0.
+function tryRestorePlaybackState() {
+  const restorationState = urlSync.getRestorationState();
+  if (!restorationState || restorationState.currentTime == null) return;
+
+  const targetSeconds = restorationState.currentTime;
+  const shouldPlay = typeof restorationState.isPlaying === 'boolean' ? restorationState.isPlaying : null;
+
+  // Clear the restoration state so we don't re-apply on subsequent operations
+  urlSync.clearState();
+
+  // Apply a local, non-broadcast correction using NetflixController
+  netflixController.getCurrentTime()
+    .then((ms) => {
+      const currentSeconds = ms != null ? ms / 1000 : 0;
+      const drift = Math.abs(currentSeconds - targetSeconds);
+
+      // Only correct if we're meaningfully off
+      if (drift > 2) {
+        console.log('[ContentScript] Restoring playback position after navigation from', currentSeconds, 'to', targetSeconds);
+        return netflixController.seek(targetSeconds * 1000);
+      }
+    })
+    .then(() => {
+      if (shouldPlay === null) return;
+      return netflixController.isPaused().then((paused) => {
+        if (shouldPlay && paused) {
+          console.log('[ContentScript] Resuming playback after navigation');
+          return netflixController.play();
+        }
+        if (!shouldPlay && !paused) {
+          console.log('[ContentScript] Pausing playback after navigation');
+          return netflixController.pause();
+        }
+      });
+    })
+    .catch((e) => {
+      console.warn('[ContentScript] Failed to restore playback state after navigation:', e);
+    });
 }
 
 function addOrReplaceTrack(pc, track, stream) {
