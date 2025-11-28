@@ -35,12 +35,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'REQUEST_MEDIA_STREAM') {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
+        console.log('[Content Script] Media stream obtained, tracks:', stream.getTracks().length);
         localStream = stream;
         webrtcManager.setLocalStream(stream);
         webrtcManager.onLocalStreamAvailable(stream);
+        uiManager.attachLocalPreview(stream);
         sendResponse({ success: true });
       })
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .catch(err => {
+        console.error('[Content Script] Failed to get media stream:', err);
+        sendResponse({ success: false, error: err.message });
+      });
     return true;
   }
 
@@ -53,11 +58,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'PARTY_STOPPED') {
+    console.log('[Content Script] Stopping party');
     stateManager.stopParty();
     syncManager.teardown();
     urlSync.stop();
     urlSync.clearState();
     webrtcManager.clearAll();
+    uiManager.removeLocalPreview();
     if (localStream) {
       localStream.getTracks().forEach(t => t.stop());
       localStream = null;

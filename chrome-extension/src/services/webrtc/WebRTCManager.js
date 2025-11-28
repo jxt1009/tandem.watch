@@ -15,24 +15,17 @@ export class WebRTCManager {
 
     const videoManager = createRemoteVideoManager(this.remoteVideos);
     
-    const reconnectionManager = createReconnectionManager({
-      stateManager: this.stateManager,
-      peerConnections: this.peerConnections,
-      peersThatLeft: this.peersThatLeft,
-      localStream: () => this.localStream,
-      createPeer: null,
-      sendSignal: (msg) => this._sendSignal(msg),
-      addOrReplaceTrack
-    });
-
+    // Create a placeholder object for circular dependency resolution
+    const reconnectionManager = {};
+    
     const createPeer = createPeerConnectionFactory({
       stateManager: this.stateManager,
       sendSignal: (msg) => this._sendSignal(msg),
       remoteStreams: this.remoteStreams,
       remoteVideos: this.remoteVideos,
       addRemoteVideo: videoManager.add,
-      attemptReconnection: reconnectionManager.attempt,
-      clearReconnection: reconnectionManager.clear,
+      attemptReconnection: (peerId) => reconnectionManager.attempt(peerId),
+      clearReconnection: (peerId) => reconnectionManager.clear(peerId),
       removeRemoteVideo: (peerId) => {
         videoManager.remove(peerId);
         this.remoteStreams.delete(peerId);
@@ -40,7 +33,17 @@ export class WebRTCManager {
       peersThatLeft: this.peersThatLeft
     });
 
-    reconnectionManager.createPeer = createPeer;
+    // Now create the actual reconnection manager with createPeer available
+    Object.assign(reconnectionManager, createReconnectionManager({
+      stateManager: this.stateManager,
+      peerConnections: this.peerConnections,
+      peersThatLeft: this.peersThatLeft,
+      localStream: () => this.localStream,
+      createPeer: createPeer,
+      sendSignal: (msg) => this._sendSignal(msg),
+      addOrReplaceTrack
+    }));
+
     this.reconnectionManager = reconnectionManager;
     this.createPeer = createPeer;
     this.videoManager = videoManager;
