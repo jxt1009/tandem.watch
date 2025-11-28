@@ -3,9 +3,9 @@ const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
   entry: {
-    'content-script': './chrome-extension/content-script.js',
-    'background': './chrome-extension/background.js',
-    'popup': './chrome-extension/popup.js'
+    'content-script': './chrome-extension/src/content/main.js',
+    'background': './chrome-extension/src/background/main.js',
+    'popup': './chrome-extension/src/ui/popup.main.js'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),

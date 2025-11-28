@@ -1,5 +1,40 @@
 # Netflix Party Sync - Complete Implementation ✅
 
+## 🏗️ Refactored Architecture (Nov 2025)
+
+The extension has been refactored for maintainability with a modular `src/` structure:
+
+### Development Workflow
+```bash
+# Build for production (outputs to dist/)
+npm run build
+
+# Watch mode for development
+npm run dev
+
+# Clean build artifacts
+npm run clean
+```
+
+### Source Structure
+- `chrome-extension/src/` - New modular source layout
+  - `background/` - Background script wiring
+  - `content/` - Content scripts and Netflix controller
+  - `ui/` - Popup and UI components
+  - `managers/` - State, sync, and URL management (split into submodules)
+  - `services/` - WebRTC and signaling services (modularized)
+  - `utils/` - Shared helpers
+  - `types/` - Type declarations
+
+### Build Output
+- `dist/` - Compiled extension ready to load in Chrome
+- Webpack bundles from `src/*/main.js` entries
+- Assets and manifest copied from `chrome-extension/`
+
+See `ARCHITECTURE.md` for detailed module breakdown and migration notes.
+
+---
+
 ## 📋 Implementation Checklist
 
 ### ✅ Chrome Extension Core Files
@@ -9,6 +44,7 @@
 - [x] `popup.html` - User interface for extension popup
 - [x] `popup.js` - Popup logic and messaging
 - [x] `styles.css` - Netflix-themed styling
+- [x] **NEW**: Modular `src/` architecture with focused submodules
 
 ### ✅ Extension Icons
 - [x] `images/icon16.svg` - Small icon
@@ -24,10 +60,10 @@
 ### ✅ Documentation
 - [x] `QUICKSTART.md` - 30-second setup guide
 - [x] `SETUP.md` - Complete installation and troubleshooting
-- [x] `README.md` - Feature overview (in extension folder)
+- [x] `README.md` - Feature overview (this file)
 - [x] `IMPLEMENTATION_GUIDE.md` - Technical deep-dive
 - [x] `IMPLEMENTATION_SUMMARY.md` - Architecture overview
-- [x] `ARCHITECTURE.md` - Visual diagrams and data flows
+- [x] `ARCHITECTURE.md` - Refactored structure and module breakdown
 
 ---
 
