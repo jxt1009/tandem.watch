@@ -5,12 +5,14 @@ import { WebRTCManager } from '../services/webrtc/WebRTCManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { URLSync } from '../managers/url/URLSync.js';
 
+console.log('[Content Script] Initializing managers...');
 const stateManager = new StateManager();
 const uiManager = new UIManager();
 const netflixController = new NetflixController();
 const syncManager = new SyncManager(stateManager, netflixController);
 const webrtcManager = new WebRTCManager(stateManager, uiManager);
 const urlSync = new URLSync(stateManager);
+console.log('[Content Script] Managers initialized');
 
 let localStream = null;
 
@@ -29,6 +31,7 @@ let localStream = null;
 })();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Content Script] Received message:', request.type);
   if (request.type === 'REQUEST_MEDIA_STREAM') {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
@@ -42,6 +45,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'PARTY_STARTED') {
+    console.log('[Content Script] Party started:', request.userId, request.roomId);
     stateManager.startParty(request.userId, request.roomId);
     syncManager.setup();
     urlSync.start();
@@ -62,6 +66,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'SIGNAL') {
+    console.log('[Content Script] Handling SIGNAL:', request.message?.type);
     webrtcManager.handleSignal(request.message);
   }
 

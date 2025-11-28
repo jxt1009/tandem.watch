@@ -1,14 +1,17 @@
-export function createSignalingHandlers({ state, peerConnections, peersThatLeft, localStream, createPeer, sendSignal, addOrReplaceTrack, clearReconnection, removeRemoteVideo }) {
+export function createSignalingHandlers({ getState, peerConnections, peersThatLeft, getLocalStream, createPeer, sendSignal, addOrReplaceTrack, clearReconnection, removeRemoteVideo }) {
   return {
     async handleJoin(from) {
+      console.log('[WebRTCManager] Handling JOIN from', from);
+      const state = getState();
       if (from === state.userId) return;
       peersThatLeft.delete(from);
       if (peerConnections.has(from)) return;
       try {
         const pc = createPeer(from);
         peerConnections.set(from, pc);
-        if (localStream) {
-          localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+        const stream = getLocalStream();
+        if (stream) {
+          stream.getTracks().forEach(t => addOrReplaceTrack(pc, t, stream));
         }
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -19,6 +22,8 @@ export function createSignalingHandlers({ state, peerConnections, peersThatLeft,
       }
     },
     async handleOffer(from, offer) {
+      console.log('[WebRTCManager] Handling OFFER from', from);
+      const state = getState();
       if (from === state.userId) return;
       let pc = peerConnections.get(from);
       if (pc && pc.signalingState !== 'closed') {
@@ -32,8 +37,9 @@ export function createSignalingHandlers({ state, peerConnections, peersThatLeft,
       }
       try {
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
-        if (localStream) {
-          localStream.getTracks().forEach(t => addOrReplaceTrack(pc, t, localStream));
+        const stream = getLocalStream();
+        if (stream) {
+          stream.getTracks().forEach(t => addOrReplaceTrack(pc, t, stream));
         }
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -45,6 +51,7 @@ export function createSignalingHandlers({ state, peerConnections, peersThatLeft,
       }
     },
     async handleAnswer(from, answer) {
+      console.log('[WebRTCManager] Handling ANSWER from', from);
       const pc = peerConnections.get(from);
       if (pc && pc.signalingState === 'have-local-offer') {
         try {
@@ -55,6 +62,7 @@ export function createSignalingHandlers({ state, peerConnections, peersThatLeft,
       }
     },
     async handleIceCandidate(from, candidate) {
+      console.log('[WebRTCManager] Handling ICE_CANDIDATE from', from);
       const pc = peerConnections.get(from);
       if (pc) {
         try {
@@ -65,6 +73,7 @@ export function createSignalingHandlers({ state, peerConnections, peersThatLeft,
       }
     },
     handleLeave(from) {
+      console.log('[WebRTCManager] Handling LEAVE from', from);
       peersThatLeft.add(from);
       const pc = peerConnections.get(from);
       if (pc) {

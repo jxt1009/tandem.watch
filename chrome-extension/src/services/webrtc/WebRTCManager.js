@@ -46,10 +46,10 @@ export class WebRTCManager {
     this.videoManager = videoManager;
 
     this.signalingHandlers = createSignalingHandlers({
-      state: this.stateManager.getState(),
+      getState: () => this.stateManager.getState(),
       peerConnections: this.peerConnections,
       peersThatLeft: this.peersThatLeft,
-      localStream: () => this.localStream,
+      getLocalStream: () => this.localStream,
       createPeer,
       sendSignal: (msg) => this._sendSignal(msg),
       addOrReplaceTrack,

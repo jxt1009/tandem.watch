@@ -52,8 +52,10 @@ export class BackgroundService {
 
   connectToSignalingServer(resolve, reject) {
     try {
+      console.log('[BackgroundService] Connecting to signaling server...');
       this.ws = new WebSocket('ws://watch.toper.dev/ws');
       this.ws.onopen = () => {
+        console.log('[BackgroundService] Connected to signaling server');
         this.isConnected = true;
         this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
@@ -103,6 +105,7 @@ export class BackgroundService {
   async handleSignalingMessage(data) {
     try {
       const message = JSON.parse(data);
+      console.log('[BackgroundService] Received signaling message:', message.type);
       chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
         tabs.forEach(tab => {
           chrome.tabs.sendMessage(tab.id, { type: 'SIGNAL', message }).catch(() => {});
