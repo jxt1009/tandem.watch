@@ -15,6 +15,47 @@ const urlSync = new URLSync(stateManager);
 console.log('[Content Script] Managers initialized');
 
 let localStream = null;
+let videoElementMonitor = null;
+
+// Monitor and restore video elements if they get removed during navigation
+function startVideoElementMonitoring() {
+  if (videoElementMonitor) return;
+  
+  videoElementMonitor = setInterval(() => {
+    const state = stateManager.getState();
+    if (!state.partyActive) return;
+    
+    // Check if local preview exists
+    if (localStream && !document.getElementById('toperparty-local-preview')) {
+      console.log('[Content Script] Local preview missing, re-attaching');
+      uiManager.attachLocalPreview(localStream);
+    }
+    
+    // Check if remote videos exist
+    const remoteVideos = uiManager.getRemoteVideos();
+    const remoteStreams = uiManager.getRemoteStreams();
+    remoteStreams.forEach((stream, peerId) => {
+      const videoId = 'toperparty-remote-' + peerId;
+      if (!document.getElementById(videoId)) {
+        console.log('[Content Script] Remote video missing for peer:', peerId, 're-adding');
+        const videoManager = webrtcManager.videoManager;
+        if (videoManager && videoManager.add) {
+          videoManager.add(peerId, stream);
+        }
+      }
+    });
+  }, 1000); // Check every second
+  
+  console.log('[Content Script] Started video element monitoring');
+}
+
+function stopVideoElementMonitoring() {
+  if (videoElementMonitor) {
+    clearInterval(videoElementMonitor);
+    videoElementMonitor = null;
+    console.log('[Content Script] Stopped video element monitoring');
+  }
+}
 
 (function checkRestorePartyState() {
   const restorationState = urlSync.getRestorationState();
@@ -33,13 +74,17 @@ let localStream = null;
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Content Script] Received message:', request.type);
   if (request.type === 'REQUEST_MEDIA_STREAM') {
+    console.log('[Content Script] Processing REQUEST_MEDIA_STREAM');
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(stream => {
         console.log('[Content Script] Media stream obtained, tracks:', stream.getTracks().length);
         localStream = stream;
+        console.log('[Content Script] Setting local stream on WebRTC manager');
         webrtcManager.setLocalStream(stream);
         webrtcManager.onLocalStreamAvailable(stream);
+        console.log('[Content Script] Attaching local preview to UI');
         uiManager.attachLocalPreview(stream);
+        console.log('[Content Script] Local preview attached, sending success response');
         sendResponse({ success: true });
       })
       .catch(err => {
@@ -54,11 +99,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     stateManager.startParty(request.userId, request.roomId);
     syncManager.setup();
     urlSync.start();
+    startVideoElementMonitoring();
     sendResponse({ success: true });
   }
 
   if (request.type === 'PARTY_STOPPED') {
     console.log('[Content Script] Stopping party');
+    stopVideoElementMonitoring();
     stateManager.stopParty();
     syncManager.teardown();
     urlSync.stop();
@@ -81,9 +128,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     syncManager.handlePlaybackControl(request.control, request.fromUserId);
   }
 
-  if (request.type === 'APPLY_SYNC_PLAYBACK') {
-    syncManager.handlePassiveSync(request.currentTime, request.isPlaying, request.fromUserId, request.timestamp);
-  }
+  // Passive sync removed - using event-based sync only
 
   if (request.type === 'APPLY_SEEK') {
     syncManager.handleSeek(request.currentTime, request.isPlaying, request.fromUserId);

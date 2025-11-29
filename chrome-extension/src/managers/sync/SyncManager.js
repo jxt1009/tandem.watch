@@ -1,5 +1,4 @@
 import { SyncLock } from './lock.js';
-import { EventDebouncer } from './debounce.js';
 import { attachPlaybackListeners } from './eventListeners.js';
 import { createRemoteHandlers } from './remoteHandlers.js';
 
@@ -14,17 +13,14 @@ export class SyncManager {
     this.state = stateManager;
     this.netflix = netflixController;
     this.lock = new SyncLock();
-    this.debouncer = new EventDebouncer(200);
     this.isInitializedRef = new MutableRef(false);
     this.listeners = null;
-    this.contextRef = new MutableRef({ lastUserInteractionAt: 0 });
 
     this.remote = createRemoteHandlers({
       state: this.state,
       netflix: this.netflix,
       lock: this.lock,
       isInitializedRef: this.isInitializedRef,
-      contextRef: this.contextRef,
     });
   }
 
@@ -32,44 +28,44 @@ export class SyncManager {
     try {
       const video = await this.waitForVideo();
       if (!video) { console.warn('[SyncManager] Netflix video element not found'); return; }
+      
+      console.log('[SyncManager] Setting up event listeners');
       this.isInitializedRef.set(false);
+      
+      // Request initial sync from other clients
       this.state.safeSendMessage({ type: 'REQUEST_SYNC' });
+      
+      // If no response after 2 seconds, consider ourselves initialized
       setTimeout(() => {
-        if (!this.isInitializedRef.get()) { this.isInitializedRef.set(true); }
+        if (!this.isInitializedRef.get()) {
+          console.log('[SyncManager] No sync response received, marking as initialized');
+          this.isInitializedRef.set(true);
+        }
       }, 2000);
+      
       const listeners = attachPlaybackListeners({
         video,
         state: this.state,
         isInitializedRef: this.isInitializedRef,
         lock: this.lock,
-        debouncer: this.debouncer,
-        onBroadcast: (vid) => this.broadcastLocalState(vid),
-        onPassiveSyncContext: ({ now }) => {
-          this.state.safeSendMessage({
-            type: 'SYNC_TIME',
-            currentTime: video.currentTime,
-            isPlaying: !video.paused,
-            timestamp: now,
-          });
-        }
+        onPlay: (vid) => this.broadcastPlay(vid),
+        onPause: (vid) => this.broadcastPause(vid),
+        onSeek: (vid) => this.broadcastSeek(vid)
       });
       this.listeners = listeners;
-      this.contextRef.set(listeners.context);
     } catch (err) { console.error('[SyncManager] Error setting up playback sync:', err); }
   }
 
   teardown() {
     if (this.listeners && this.listeners.video) {
-      const { video, handleLocalEvent, handleTimeUpdate } = this.listeners;
+      const { video, handlePlay, handlePause, handleSeeked } = this.listeners;
       try {
-        video.removeEventListener('play', handleLocalEvent);
-        video.removeEventListener('pause', handleLocalEvent);
-        video.removeEventListener('seeked', handleLocalEvent);
-        video.removeEventListener('timeupdate', handleTimeUpdate);
+        video.removeEventListener('play', handlePlay);
+        video.removeEventListener('pause', handlePause);
+        video.removeEventListener('seeked', handleSeeked);
       } catch (e) { console.warn('[SyncManager] Error removing listeners:', e); }
       this.listeners = null;
     }
-    this.debouncer.cancel();
   }
 
   waitForVideo() {
@@ -84,27 +80,36 @@ export class SyncManager {
     });
   }
 
-  broadcastLocalState(video) {
-    const currentTime = video.currentTime;
-    const isPlaying = !video.paused;
-    const events = new Set(this.debouncer.events);
-    console.log('[SyncManager] Broadcasting local state - events:', Array.from(events), 'time:', currentTime.toFixed(2), 'playing:', isPlaying);
-    
-    // Priority: Seek > Play/Pause
-    if (events.has('seeked')) {
-      console.log('[SyncManager] Sending SEEK:', currentTime.toFixed(2), 'playing:', isPlaying);
-      this.state.safeSendMessage({ type: 'SEEK', currentTime, isPlaying });
-    } else if (events.has('play') || events.has('pause')) {
-      const control = isPlaying ? 'play' : 'pause';
-      console.log('[SyncManager] Sending PLAY_PAUSE:', control, 'at time:', currentTime.toFixed(2));
-      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control, timestamp: currentTime });
-    }
+  broadcastPlay(video) {
+    console.log('[SyncManager] Broadcasting PLAY event');
+    this.state.safeSendMessage({ 
+      type: 'PLAY_PAUSE', 
+      control: 'play', 
+      currentTime: video.currentTime 
+    });
   }
 
-  // Remote API mirrors original methods
+  broadcastPause(video) {
+    console.log('[SyncManager] Broadcasting PAUSE event');
+    this.state.safeSendMessage({ 
+      type: 'PLAY_PAUSE', 
+      control: 'pause', 
+      currentTime: video.currentTime 
+    });
+  }
+
+  broadcastSeek(video) {
+    console.log('[SyncManager] Broadcasting SEEK event at', video.currentTime);
+    this.state.safeSendMessage({ 
+      type: 'SEEK', 
+      currentTime: video.currentTime, 
+      isPlaying: !video.paused 
+    });
+  }
+
+  // Remote event handlers
   handleRequestSync(fromUserId) { return this.remote.handleRequestSync(fromUserId); }
   handleSyncResponse(currentTime, isPlaying, fromUserId) { return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId); }
   handlePlaybackControl(control, fromUserId) { return this.remote.handlePlaybackControl(control, fromUserId); }
   handleSeek(currentTime, isPlaying, fromUserId) { return this.remote.handleSeek(currentTime, isPlaying, fromUserId); }
-  handlePassiveSync(currentTime, isPlaying, fromUserId, timestamp) { return this.remote.handlePassiveSync(currentTime, isPlaying, fromUserId, timestamp); }
 }

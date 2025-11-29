@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 export function attachPlaybackListeners({ video, state, isInitializedRef, lock, debouncer, onBroadcast, onPassiveSyncContext }) {
   const context = { lastUserInteractionAt: 0 };
   const handleLocalEvent = (e) => {
@@ -20,24 +21,36 @@ export function attachPlaybackListeners({ video, state, isInitializedRef, lock, 
     context.lastUserInteractionAt = Date.now();
     debouncer.add(e.type);
     debouncer.schedule(() => onBroadcast(video));
-  };
-
-  let lastPassiveSentAt = 0;
-  const handleTimeUpdate = () => {
+=======
+export function attachPlaybackListeners({ video, state, isInitializedRef, lock, onPlay, onPause, onSeek }) {
+  const handlePlay = () => {
     if (!state.isActive()) return;
-    const now = Date.now();
+    if (!isInitializedRef.get()) return;
     if (lock.isActive()) return;
-    if (now - context.lastUserInteractionAt < 5000) return;
-    if (now - lastPassiveSentAt < 10000) return;
-    if (video.paused) return;
-    lastPassiveSentAt = now;
-    onPassiveSyncContext({ now, lastPassiveSentAt });
+    console.log('[EventListeners] Play event detected');
+    onPlay(video);
+>>>>>>> ecb1452 (refactor project to a more sensible dir structure)
   };
 
-  video.addEventListener('play', handleLocalEvent);
-  video.addEventListener('pause', handleLocalEvent);
-  video.addEventListener('seeked', handleLocalEvent);
-  video.addEventListener('timeupdate', handleTimeUpdate);
+  const handlePause = () => {
+    if (!state.isActive()) return;
+    if (!isInitializedRef.get()) return;
+    if (lock.isActive()) return;
+    console.log('[EventListeners] Pause event detected');
+    onPause(video);
+  };
 
-  return { video, handleLocalEvent, handleTimeUpdate, context };
+  const handleSeeked = () => {
+    if (!state.isActive()) return;
+    if (!isInitializedRef.get()) return;
+    if (lock.isActive()) return;
+    console.log('[EventListeners] Seek event detected');
+    onSeek(video);
+  };
+
+  video.addEventListener('play', handlePlay);
+  video.addEventListener('pause', handlePause);
+  video.addEventListener('seeked', handleSeeked);
+
+  return { video, handlePlay, handlePause, handleSeeked };
 }
