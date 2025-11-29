@@ -36,14 +36,17 @@ export class URLSync {
           this.onWatchPageChange();
         }
         
-        // Broadcast URL change to other clients
+        // Only broadcast URL changes if navigating to a /watch page
+        // This allows users to browse without forcing others to follow
         const state = this.stateManager.getState();
-        if (state.partyActive) {
-          console.log('[URLSync] Broadcasting URL change to party');
+        if (state.partyActive && nowOnWatch && (watchPageChanged || (!wasOnWatch && nowOnWatch))) {
+          console.log('[URLSync] Broadcasting /watch URL change to party');
           this.stateManager.safeSendMessage({ 
             type: 'URL_CHANGE', 
             url: currentUrl 
           });
+        } else if (!nowOnWatch) {
+          console.log('[URLSync] Not broadcasting - not on /watch page (on:', currentPath + ')');
         }
       }
     }, 500);
