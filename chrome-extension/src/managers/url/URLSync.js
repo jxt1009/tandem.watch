@@ -1,8 +1,9 @@
 export class URLSync {
-  constructor(stateManager) {
+  constructor(stateManager, onWatchPageChange) {
     this.stateManager = stateManager;
     this.urlMonitorInterval = null;
     this.lastUrl = null;
+    this.onWatchPageChange = onWatchPageChange || (() => {});
   }
   
   start() { 
@@ -19,7 +20,21 @@ export class URLSync {
       const currentUrl = window.location.href;
       if (currentUrl !== this.lastUrl) {
         console.log('[URLSync] URL changed from', this.lastUrl, 'to', currentUrl);
+        const lastPath = this.lastUrl ? new URL(this.lastUrl).pathname : '';
+        const currentPath = new URL(currentUrl).pathname;
+        
+        // Check if we navigated to a different /watch page
+        const wasOnWatch = lastPath.startsWith('/watch');
+        const nowOnWatch = currentPath.startsWith('/watch');
+        const watchPageChanged = wasOnWatch && nowOnWatch && lastPath !== currentPath;
+        
         this.lastUrl = currentUrl;
+        
+        // If we changed to a different /watch page, reinitialize sync
+        if (watchPageChanged) {
+          console.log('[URLSync] Watch page changed - triggering sync reinitialization');
+          this.onWatchPageChange();
+        }
         
         // Broadcast URL change to other clients
         const state = this.stateManager.getState();

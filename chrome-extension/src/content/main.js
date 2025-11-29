@@ -11,7 +11,17 @@ const uiManager = new UIManager();
 const netflixController = new NetflixController();
 const syncManager = new SyncManager(stateManager, netflixController);
 const webrtcManager = new WebRTCManager(stateManager, uiManager);
-const urlSync = new URLSync(stateManager);
+
+// Callback when we navigate to a different /watch page
+const handleWatchPageChange = () => {
+  console.log('[Content Script] Watch page changed - reinitializing sync manager');
+  syncManager.teardown();
+  syncManager.setup().catch(err => {
+    console.error('[Content Script] Failed to reinitialize sync manager:', err);
+  });
+};
+
+const urlSync = new URLSync(stateManager, handleWatchPageChange);
 console.log('[Content Script] Managers initialized');
 
 let localStream = null;
