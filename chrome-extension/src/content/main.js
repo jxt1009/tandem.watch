@@ -164,14 +164,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'APPLY_URL_CHANGE') {
     console.log('[Content Script] Received URL change request:', request.url, 'from', request.fromUserId);
-    if (!stateManager.restoringPartyState) {
-      console.log('[Content Script] Navigating to:', request.url);
-      // Save state before navigating
-      urlSync.saveState();
-      window.location.href = request.url;
-    } else {
+    
+    if (stateManager.restoringPartyState) {
       console.log('[Content Script] Ignoring URL change - currently restoring party state');
+      return;
     }
+    
+    // Only apply URL changes to /watch pages
+    const incomingUrl = new URL(request.url);
+    const currentPath = window.location.pathname;
+    const isOnWatch = currentPath.startsWith('/watch');
+    const incomingIsWatch = incomingUrl.pathname.startsWith('/watch');
+    
+    if (!incomingIsWatch) {
+      console.log('[Content Script] Ignoring URL change - incoming URL is not a /watch page:', incomingUrl.pathname);
+      return;
+    }
+    
+    if (!isOnWatch) {
+      console.log('[Content Script] Ignoring URL change - not currently on a /watch page (on:', currentPath + ')');
+      return;
+    }
+    
+    console.log('[Content Script] Navigating to new watch page:', request.url);
+    // Save state before navigating
+    urlSync.saveState();
+    window.location.href = request.url;
   }
 
   if (request.type === 'HANDLE_REQUEST_SYNC') {
