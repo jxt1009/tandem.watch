@@ -88,8 +88,11 @@ export class WebRTCManager {
     const state = this.stateManager.getState();
     console.log('[WebRTCManager] Processing signal type:', type, 'from:', from, 'to:', to, 'myId:', state.userId);
     
-    if (to && to !== state.userId) {
-      console.log('[WebRTCManager] Ignoring message not meant for me');
+    // Only check 'to' field for targeted messages (not broadcasts like JOIN)
+    // JOIN, LEAVE, and SYNC messages are broadcasts that don't have 'to' fields
+    const isTargetedMessage = type === 'OFFER' || type === 'ANSWER' || type === 'ICE_CANDIDATE' || type === 'SYNC_RESPONSE';
+    if (isTargetedMessage && to && to !== state.userId) {
+      console.log('[WebRTCManager] Ignoring targeted message not meant for me');
       return;
     }
 
