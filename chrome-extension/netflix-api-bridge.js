@@ -38,6 +38,20 @@
     isPaused: function() {
       const player = this.getPlayer();
       return player ? player.isPaused() : true;
+    },
+    
+    setVolume: function(level) {
+      const player = this.getPlayer();
+      if (player) {
+        player.setVolume(level);
+        return true;
+      }
+      return false;
+    },
+    
+    getVolume: function() {
+      const player = this.getPlayer();
+      return player ? player.getVolume() : 1.0;
     }
   };
   

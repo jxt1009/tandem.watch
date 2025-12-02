@@ -117,6 +117,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('[Content Script] Party started:', request.userId, request.roomId);
     stateManager.startParty(request.userId, request.roomId);
     
+    // Set Netflix volume to 15%
+    setTimeout(() => {
+      netflixController.setVolume(0.15).then(() => {
+        console.log('[Content Script] Set Netflix volume to 15%');
+      }).catch(err => {
+        console.warn('[Content Script] Failed to set volume:', err);
+      });
+    }, 1000);
+    
     // Teardown existing sync manager if already set up
     syncManager.teardown();
     

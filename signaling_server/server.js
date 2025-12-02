@@ -62,6 +62,12 @@ wss.on('connection', (ws, req) => {
       const parsed = JSON.parse(text);
       const { type, roomId, userId } = parsed;
 
+      // Handle PING/PONG for connection health monitoring
+      if (type === 'PING') {
+        ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
+        return;
+      }
+
       if (type === 'JOIN' && roomId && userId) {
         addUserToRoom(ws, userId, roomId);
         console.log(`User ${userId} joined room ${roomId}`);

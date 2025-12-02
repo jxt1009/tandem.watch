@@ -1,4 +1,55 @@
 export function createRemoteVideoManager(remoteVideos) {
+  function makeDraggable(element) {
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+
+    element.addEventListener('mousedown', dragStart);
+    element.addEventListener('mouseup', dragEnd);
+    element.addEventListener('mousemove', drag);
+    element.style.cursor = 'move';
+
+    function dragStart(e) {
+      const computedStyle = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      
+      element.style.left = rect.left + 'px';
+      element.style.top = rect.top + 'px';
+      element.style.bottom = 'auto';
+      element.style.right = 'auto';
+      
+      initialX = e.clientX - rect.left;
+      initialY = e.clientY - rect.top;
+      isDragging = true;
+      element.style.opacity = '0.8';
+    }
+
+    function dragEnd(e) {
+      initialX = currentX;
+      initialY = currentY;
+      isDragging = false;
+      element.style.opacity = '1';
+    }
+
+    function drag(e) {
+      if (isDragging) {
+        e.preventDefault();
+        currentX = e.clientX - initialX;
+        currentY = e.clientY - initialY;
+        
+        const maxX = window.innerWidth - element.offsetWidth;
+        const maxY = window.innerHeight - element.offsetHeight;
+        currentX = Math.max(0, Math.min(currentX, maxX));
+        currentY = Math.max(0, Math.min(currentY, maxY));
+        
+        element.style.left = currentX + 'px';
+        element.style.top = currentY + 'px';
+      }
+    }
+  }
+
   function add(peerId, stream) {
     console.log('[RemoteVideoManager] Adding remote video for peer:', peerId, 'stream:', stream, 'tracks:', stream.getTracks());
     remove(peerId);
@@ -26,6 +77,10 @@ export function createRemoteVideoManager(remoteVideos) {
     document.body.appendChild(v);
     console.log('[RemoteVideoManager] Appended video to body');
     remoteVideos.set(peerId, v);
+    
+    // Make it draggable
+    makeDraggable(v);
+    
     try {
       v.play().then(() => {
         console.log('[RemoteVideoManager] Video playing, unmuting');

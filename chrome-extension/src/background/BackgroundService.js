@@ -9,6 +9,9 @@ export class BackgroundService {
     this.maxReconnectAttempts = 10;
     this.reconnectTimer = null;
     this.intentionalDisconnect = false;
+    this.heartbeatInterval = null;
+    this.heartbeatTimeout = null;
+    this.missedHeartbeats = 0;
   }
 
   generateUserId() {
@@ -62,6 +65,7 @@ export class BackgroundService {
         console.log('[BackgroundService] Connected to signaling server');
         this.isConnected = true;
         this.reconnectAttempts = 0;
+        this.missedHeartbeats = 0;
         this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
@@ -69,6 +73,7 @@ export class BackgroundService {
             chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_INITIAL_SYNC_AND_PLAY' }).catch(() => {});
           });
         });
+        this.startHeartbeat();
         resolve();
       };
       this.ws.onmessage = (event) => this.handleSignalingMessage(event.data);
@@ -94,6 +99,7 @@ export class BackgroundService {
 
   stopParty(sendLeaveSignal = true) {
     this.intentionalDisconnect = true;
+    this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -129,6 +135,18 @@ export class BackgroundService {
     try {
       const message = JSON.parse(data);
       console.log('[BackgroundService] Received signaling message:', message.type);
+      
+      // Handle PONG response to reset heartbeat
+      if (message.type === 'PONG') {
+        if (this.heartbeatTimeout) {
+          clearTimeout(this.heartbeatTimeout);
+          this.heartbeatTimeout = null;
+        }
+        this.missedHeartbeats = 0;
+        console.log('[BackgroundService] Heartbeat acknowledged');
+        return;
+      }
+      
       chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
         tabs.forEach(tab => {
           chrome.tabs.sendMessage(tab.id, { type: 'SIGNAL', message }).catch(() => {});
@@ -208,12 +226,14 @@ export class BackgroundService {
         console.log('[BackgroundService] Reconnected successfully');
         this.isConnected = true;
         this.reconnectAttempts = 0;
+        this.missedHeartbeats = 0;
         this.ws.send(JSON.stringify({ 
           type: 'JOIN', 
           userId: this.userId, 
           roomId: this.roomId, 
           timestamp: Date.now() 
         }));
+        this.startHeartbeat();
         console.log('[BackgroundService] Rejoined room after reconnection');
       };
       this.ws.onmessage = (event) => this.handleSignalingMessage(event.data);
@@ -240,6 +260,52 @@ export class BackgroundService {
     } else {
       console.warn('[BackgroundService] Cannot broadcast - WebSocket not open:', this.ws ? this.ws.readyState : 'no ws');
     }
+  }
+
+  startHeartbeat() {
+    this.stopHeartbeat();
+    console.log('[BackgroundService] Starting heartbeat monitoring');
+    
+    // Send ping every 15 seconds
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'PING', userId: this.userId, timestamp: Date.now() }));
+          
+          // Set timeout to detect if we don't get a response
+          this.heartbeatTimeout = setTimeout(() => {
+            this.missedHeartbeats++;
+            console.warn('[BackgroundService] Missed heartbeat response. Count:', this.missedHeartbeats);
+            
+            // If we miss 3 heartbeats (45 seconds), assume connection is dead
+            if (this.missedHeartbeats >= 3) {
+              console.error('[BackgroundService] Connection appears dead, forcing reconnection');
+              this.stopHeartbeat();
+              if (this.ws) {
+                this.ws.close();
+              }
+            }
+          }, 10000); // 10 second timeout for response
+        } catch (e) {
+          console.error('[BackgroundService] Error sending ping:', e);
+        }
+      } else {
+        console.warn('[BackgroundService] WebSocket not open, stopping heartbeat');
+        this.stopHeartbeat();
+      }
+    }, 15000); // Every 15 seconds
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
+    }
+    this.missedHeartbeats = 0;
   }
 
   getStatus() {
