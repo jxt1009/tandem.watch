@@ -81,6 +81,30 @@ function stopVideoElementMonitoring() {
           console.log('[Content Script] Party restoration successful - setting state with userId:', response.userId);
           // Immediately set the userId and roomId so we can handle incoming messages
           stateManager.startParty(response.userId, response.roomId);
+          
+          // Re-obtain media stream for WebRTC signaling
+          console.log('[Content Script] Re-obtaining media stream after navigation');
+          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+              console.log('[Content Script] Media stream obtained after restoration');
+              localStream = stream;
+              webrtcManager.setLocalStream(stream);
+              webrtcManager.onLocalStreamAvailable(stream);
+              uiManager.attachLocalPreview(stream);
+              
+              // Re-setup sync manager
+              syncManager.teardown();
+              syncManager.setup().catch(err => {
+                console.error('[Content Script] Failed to setup sync manager after restoration:', err);
+              });
+              
+              // Start URL monitoring if not already started
+              urlSync.start();
+              startVideoElementMonitoring();
+            })
+            .catch(err => {
+              console.error('[Content Script] Failed to get media stream after restoration:', err);
+            });
         } else {
           console.error('[Content Script] Party restoration failed:', response ? response.error : 'Unknown error');
         }
