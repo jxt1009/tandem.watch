@@ -140,5 +140,86 @@ export class UIManager {
     this.remoteVideos.clear();
     this.remoteStreams.clear();
     this.clearStreamMonitorInterval();
+    this.removeConnectionIndicator();
+  }
+
+  showConnectionIndicator() {
+    // Remove existing indicator if any
+    this.removeConnectionIndicator();
+
+    const indicator = document.createElement('div');
+    indicator.id = 'toperparty-connection-indicator';
+    indicator.style.cssText = `
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 999999;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+    `;
+
+    const dot = document.createElement('div');
+    dot.id = 'toperparty-connection-dot';
+    dot.style.cssText = `
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+      animation: pulse 2s ease-in-out infinite;
+    `;
+
+    const text = document.createElement('span');
+    text.id = 'toperparty-connection-text';
+    text.textContent = 'Party Active';
+
+    indicator.appendChild(dot);
+    indicator.appendChild(text);
+    document.body.appendChild(indicator);
+
+    // Add pulse animation
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    return indicator;
+  }
+
+  updateConnectionIndicator(connected) {
+    const dot = document.getElementById('toperparty-connection-dot');
+    const text = document.getElementById('toperparty-connection-text');
+    
+    if (dot && text) {
+      if (connected) {
+        dot.style.background = '#4ade80';
+        text.textContent = 'Party Active';
+      } else {
+        dot.style.background = '#ef4444';
+        text.textContent = 'Reconnecting...';
+      }
+    }
+  }
+
+  removeConnectionIndicator() {
+    const indicator = document.getElementById('toperparty-connection-indicator');
+    if (indicator) {
+      indicator.remove();
+    }
   }
 }
