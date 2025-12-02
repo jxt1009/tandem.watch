@@ -267,6 +267,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'APPLY_PLAYBACK_CONTROL') {
+    // Only apply playback controls if we're on a /watch page
+    if (!window.location.pathname.startsWith('/watch')) {
+      console.log('[Content Script] Ignoring playback control - not on /watch page');
+      return;
+    }
     console.log('[Content Script] Applying playback control:', request.control, 'at', request.currentTime, 'from', request.fromUserId);
     syncManager.handlePlaybackControl(request.control, request.currentTime, request.fromUserId);
   }
@@ -274,6 +279,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Passive sync removed - using event-based sync only
 
   if (request.type === 'APPLY_SEEK') {
+    // Only apply seek if we're on a /watch page
+    if (!window.location.pathname.startsWith('/watch')) {
+      console.log('[Content Script] Ignoring seek - not on /watch page');
+      return;
+    }
     syncManager.handleSeek(request.currentTime, request.isPlaying, request.fromUserId);
   }
 
@@ -317,10 +327,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'HANDLE_REQUEST_SYNC') {
+    // Only handle sync requests if we're on a /watch page
+    if (!window.location.pathname.startsWith('/watch')) {
+      console.log('[Content Script] Ignoring sync request - not on /watch page');
+      return;
+    }
     syncManager.handleRequestSync(request.fromUserId);
   }
 
   if (request.type === 'APPLY_SYNC_RESPONSE') {
+    // Only apply sync response if we're on a /watch page
+    if (!window.location.pathname.startsWith('/watch')) {
+      console.log('[Content Script] Ignoring sync response - not on /watch page');
+      return;
+    }
     console.log('[Content Script] Applying sync response from', request.fromUserId, 'URL:', request.url);
     syncManager.handleSyncResponse(request.currentTime, request.isPlaying, request.fromUserId, request.url);
   }
