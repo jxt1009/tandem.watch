@@ -4,10 +4,27 @@ import { WebSocketServer } from 'ws';
 const PORT = process.env.PORT || 4001;
 const HOST = '0.0.0.0';
 
-// Simple HTTP server so we can mount the WebSocketServer on the same port/path
+// Simple HTTP server with status endpoint
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Signaling server is running');
+  if (req.url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const status = {
+      activeRooms: rooms.size,
+      activeUsers: userStates.size,
+      rooms: Array.from(roomState.entries()).map(([roomId, state]) => ({
+        roomId,
+        userCount: rooms.get(roomId)?.size || 0,
+        hostUserId: state.hostUserId,
+        currentUrl: state.currentUrl,
+        isPlaying: state.isPlaying,
+        lastUpdate: new Date(state.lastUpdate).toISOString()
+      }))
+    };
+    res.end(JSON.stringify(status, null, 2));
+  } else {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Signaling server is running\nVisit /status for server info');
+  }
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -16,9 +33,11 @@ server.listen(PORT, HOST, () => {
   console.log(`Signaling server listening on ${HOST}:${PORT}`);
 });
 
-// Track rooms and users
-const rooms = new Map();
-const userRooms = new Map();
+// Track rooms and users with enhanced state
+const rooms = new Map(); // roomId -> Set of WebSocket clients
+const userRooms = new Map(); // WebSocket -> { userId, roomId }
+const roomState = new Map(); // roomId -> { hostUserId, currentUrl, currentTime, isPlaying, lastUpdate }
+const userStates = new Map(); // userId -> { ws, lastHeartbeat, connectionQuality }
 
 function broadcastToRoom(sender, roomId, message) {
   if (!rooms.has(roomId)) return;
@@ -34,23 +53,95 @@ function broadcastToRoom(sender, roomId, message) {
 function addUserToRoom(ws, userId, roomId) {
   if (!rooms.has(roomId)) {
     rooms.set(roomId, new Set());
+    // First user becomes the host
+    roomState.set(roomId, {
+      hostUserId: userId,
+      currentUrl: null,
+      currentTime: 0,
+      isPlaying: false,
+      lastUpdate: Date.now()
+    });
   }
   rooms.get(roomId).add(ws);
   userRooms.set(ws, { userId, roomId });
+  userStates.set(userId, { 
+    ws, 
+    lastHeartbeat: Date.now(),
+    connectionQuality: 'good'
+  });
+  
+  // Send room state to new user
+  const state = roomState.get(roomId);
+  if (state && state.currentUrl) {
+    ws.send(JSON.stringify({
+      type: 'ROOM_STATE',
+      url: state.currentUrl,
+      currentTime: state.currentTime,
+      isPlaying: state.isPlaying,
+      hostUserId: state.hostUserId
+    }));
+  }
 }
 
 function removeUserFromRoom(ws) {
   if (userRooms.has(ws)) {
-    const { roomId } = userRooms.get(ws);
+    const { userId, roomId } = userRooms.get(ws);
+    userStates.delete(userId);
+    
     if (rooms.has(roomId)) {
       rooms.get(roomId).delete(ws);
+      
+      // If room is empty, clean up
       if (rooms.get(roomId).size === 0) {
         rooms.delete(roomId);
+        roomState.delete(roomId);
+        console.log(`Room ${roomId} is now empty and removed`);
+      } else {
+        // If host left, assign new host
+        const state = roomState.get(roomId);
+        if (state && state.hostUserId === userId) {
+          const remainingClients = Array.from(rooms.get(roomId));
+          if (remainingClients.length > 0) {
+            const newHostUserRoom = userRooms.get(remainingClients[0]);
+            if (newHostUserRoom) {
+              state.hostUserId = newHostUserRoom.userId;
+              console.log(`New host for room ${roomId}: ${state.hostUserId}`);
+              
+              // Notify room of new host
+              broadcastToRoom(null, roomId, JSON.stringify({
+                type: 'HOST_CHANGED',
+                newHostUserId: state.hostUserId
+              }));
+            }
+          }
+        }
       }
     }
     userRooms.delete(ws);
   }
 }
+
+// Periodic health check and state sync
+setInterval(() => {
+  const now = Date.now();
+  const timeout = 60000; // 60 seconds
+
+  // Check for stale connections
+  userStates.forEach((state, userId) => {
+    if (now - state.lastHeartbeat > timeout) {
+      console.log(`User ${userId} appears disconnected (no heartbeat for ${timeout}ms)`);
+      state.connectionQuality = 'poor';
+      
+      // Force close stale connection
+      if (state.ws && state.ws.readyState === state.ws.OPEN) {
+        state.ws.close();
+      }
+    }
+  });
+
+  // Log room stats
+  console.log(`Active rooms: ${rooms.size}, Active users: ${userStates.size}`);
+}, 30000); // Check every 30 seconds
 
 wss.on('connection', (ws, req) => {
   const remote = req?.socket?.remoteAddress || 'unknown';
@@ -64,8 +155,61 @@ wss.on('connection', (ws, req) => {
 
       // Handle PING/PONG for connection health monitoring
       if (type === 'PING') {
+        if (userId && userStates.has(userId)) {
+          userStates.get(userId).lastHeartbeat = Date.now();
+        }
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
         return;
+      }
+
+      // Server-side sync state tracking
+      if (type === 'URL_CHANGE' && roomId) {
+        const state = roomState.get(roomId);
+        if (state) {
+          state.currentUrl = parsed.url;
+          state.lastUpdate = Date.now();
+          console.log(`Room ${roomId} URL updated: ${parsed.url}`);
+        }
+      }
+
+      if (type === 'PLAY_PAUSE' && roomId) {
+        const state = roomState.get(roomId);
+        if (state) {
+          state.isPlaying = parsed.control === 'play';
+          if (parsed.currentTime !== undefined) {
+            state.currentTime = parsed.currentTime;
+          }
+          state.lastUpdate = Date.now();
+          console.log(`Room ${roomId} playback: ${state.isPlaying ? 'playing' : 'paused'} at ${state.currentTime}s`);
+        }
+      }
+
+      if (type === 'SEEK' && roomId) {
+        const state = roomState.get(roomId);
+        if (state && parsed.currentTime !== undefined) {
+          state.currentTime = parsed.currentTime;
+          state.isPlaying = parsed.isPlaying;
+          state.lastUpdate = Date.now();
+          console.log(`Room ${roomId} seeked to ${state.currentTime}s`);
+        }
+      }
+
+      // Handle sync requests with server-side state
+      if (type === 'REQUEST_SYNC' && roomId) {
+        const state = roomState.get(roomId);
+        if (state && state.currentUrl) {
+          // Server responds directly with known state
+          ws.send(JSON.stringify({
+            type: 'SYNC_RESPONSE',
+            fromUserId: 'server',
+            currentTime: state.currentTime,
+            isPlaying: state.isPlaying,
+            url: state.currentUrl,
+            to: userId
+          }));
+          console.log(`Server provided sync state to ${userId}: ${state.currentTime}s ${state.isPlaying ? 'playing' : 'paused'}`);
+          return; // Don't broadcast, server handled it
+        }
       }
 
       if (type === 'JOIN' && roomId && userId) {
