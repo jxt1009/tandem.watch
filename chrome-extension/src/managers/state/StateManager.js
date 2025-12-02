@@ -41,9 +41,16 @@ export class StateManager {
     }
     console.log('[StateManager] Sending message:', message.type, message);
     try { 
-      chrome.runtime.sendMessage(message, callback); 
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('[StateManager] Error sending message:', message.type, chrome.runtime.lastError.message);
+        } else {
+          console.log('[StateManager] Message sent successfully:', message.type, response);
+        }
+        if (callback) callback(response);
+      }); 
     } catch (e) { 
-      console.warn('[StateManager] Failed to send message:', e.message); 
+      console.error('[StateManager] Exception sending message:', message.type, e.message, e); 
     }
   }
 }
