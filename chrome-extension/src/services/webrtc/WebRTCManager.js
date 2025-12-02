@@ -133,8 +133,21 @@ export class WebRTCManager {
     this.stateManager.safeSendMessage({ type: 'SIGNAL_SEND', message }, function() {});
   }
 
+  showWaitingIndicator() {
+    console.log('[WebRTCManager] Showing waiting indicator');
+    this.videoManager.showWaitingIndicator();
+  }
+  
+  hideWaitingIndicator() {
+    console.log('[WebRTCManager] Hiding waiting indicator');
+    this.videoManager.hideWaitingIndicator();
+  }
+  
   clearAll() {
     console.log('[WebRTCManager] Clearing all connections and videos');
+    
+    // Hide waiting indicator
+    this.hideWaitingIndicator();
     
     this.peerConnections.forEach((pc) => {
       try { pc.close(); } catch (e) {}

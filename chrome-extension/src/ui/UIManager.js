@@ -91,7 +91,7 @@ export class UIManager {
     v.muted = true; // Always mute local preview to avoid feedback
     v.playsInline = true;
     v.style.position = 'fixed';
-    v.style.bottom = '20px';
+    v.style.bottom = '145px';
     v.style.left = '20px';
     v.style.width = '240px';
     v.style.height = '160px';

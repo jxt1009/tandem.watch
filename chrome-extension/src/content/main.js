@@ -13,6 +13,7 @@ const staleContainers = document.querySelectorAll('[id^="toperparty-container-"]
 const staleVideos = document.querySelectorAll('[id^="toperparty-remote-"]');
 const staleOverlays = document.querySelectorAll('[id^="toperparty-overlay-"]');
 const staleLocalVideo = document.getElementById('toperparty-local-preview');
+const staleWaitingIndicator = document.getElementById('toperparty-waiting-indicator');
 
 staleContainers.forEach(el => {
   console.log('[Content Script] Removing stale container:', el.id);
@@ -29,6 +30,10 @@ staleOverlays.forEach(el => {
 if (staleLocalVideo) {
   console.log('[Content Script] Removing stale local video');
   staleLocalVideo.remove();
+}
+if (staleWaitingIndicator) {
+  console.log('[Content Script] Removing stale waiting indicator');
+  staleWaitingIndicator.remove();
 }
 
 const stateManager = new StateManager();
@@ -186,6 +191,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'PARTY_STARTED') {
     console.log('[Content Script] Party started:', request.userId, request.roomId);
     stateManager.startParty(request.userId, request.roomId);
+    
+    // Show "Waiting for others..." placeholder immediately
+    webrtcManager.showWaitingIndicator();
     
     // Set Netflix volume to 15%
     setTimeout(() => {

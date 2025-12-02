@@ -100,7 +100,7 @@ export function createRemoteVideoManager(remoteVideos) {
       container = document.createElement('div');
       container.id = 'toperparty-container-' + peerId;
       container.style.position = 'fixed';
-      container.style.bottom = '20px';
+      container.style.bottom = '145px';
       container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
       container.style.width = '240px';
       container.style.height = '160px';
@@ -348,8 +348,55 @@ export function createRemoteVideoManager(remoteVideos) {
     }
   }
   
+  function showWaitingIndicator() {
+    // Remove any existing waiting indicator first
+    hideWaitingIndicator();
+    
+    console.log('[RemoteVideoManager] Showing waiting indicator');
+    const container = document.createElement('div');
+    container.id = 'toperparty-waiting-indicator';
+    container.style.position = 'fixed';
+    container.style.bottom = '145px';
+    container.style.right = '20px';
+    container.style.width = '240px';
+    container.style.height = '160px';
+    container.style.zIndex = 10001;
+    container.style.border = '2px solid #00aaff';
+    container.style.borderRadius = '4px';
+    container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.alignItems = 'center';
+    container.style.justifyContent = 'center';
+    container.style.color = '#fff';
+    container.style.fontSize = '14px';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.pointerEvents = 'none';
+    
+    const spinner = createLoadingSpinner();
+    const text = document.createElement('div');
+    text.textContent = 'Waiting for others...';
+    text.style.fontWeight = '500';
+    text.style.marginTop = '8px';
+    
+    container.appendChild(spinner);
+    container.appendChild(text);
+    document.body.appendChild(container);
+  }
+  
+  function hideWaitingIndicator() {
+    const indicator = document.getElementById('toperparty-waiting-indicator');
+    if (indicator) {
+      console.log('[RemoteVideoManager] Hiding waiting indicator');
+      indicator.remove();
+    }
+  }
+  
   function showPlaceholder(peerId) {
     console.log('[RemoteVideoManager] Showing placeholder for peer:', peerId);
+    
+    // Hide waiting indicator when first peer connects
+    hideWaitingIndicator();
     
     // Check if container already exists
     let container = document.getElementById('toperparty-container-' + peerId);
@@ -364,7 +411,7 @@ export function createRemoteVideoManager(remoteVideos) {
     container = document.createElement('div');
     container.id = 'toperparty-container-' + peerId;
     container.style.position = 'fixed';
-    container.style.bottom = '20px';
+    container.style.bottom = '145px';
     container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
     container.style.width = '240px';
     container.style.height = '160px';
@@ -408,5 +455,5 @@ export function createRemoteVideoManager(remoteVideos) {
     console.log('[RemoteVideoManager] Created placeholder container:', container.id);
   }
   
-  return { add, remove, showReconnecting, hideOverlay, showPlaceholder };
+  return { add, remove, showReconnecting, hideOverlay, showPlaceholder, showWaitingIndicator, hideWaitingIndicator };
 }
