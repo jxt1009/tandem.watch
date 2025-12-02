@@ -42,12 +42,7 @@ export class URLSync {
         // If we navigated TO a /watch page from elsewhere, initialize sync
         if (navigatedToWatch) {
           console.log('[URLSync] Navigated to /watch page - triggering sync initialization');
-          try {
-            this.onNavigateToWatch();
-            console.log('[URLSync] Sync initialization callback completed');
-          } catch (err) {
-            console.error('[URLSync] Error calling sync initialization callback:', err);
-          }
+          this.onNavigateToWatch();
         }
         
         const state = this.stateManager.getState();

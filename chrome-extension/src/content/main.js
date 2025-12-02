@@ -31,15 +31,12 @@ const handleWatchPageChange = () => {
 const handleNavigationToWatch = () => {
   console.log('[Content Script] Navigated to /watch page');
   const state = stateManager.getState();
-  console.log('[Content Script] Current party state:', state);
   if (state.partyActive) {
     console.log('[Content Script] Party is active, initializing sync manager');
     syncManager.teardown();
     syncManager.setup().catch(err => {
       console.error('[Content Script] Failed to initialize sync manager:', err);
     });
-  } else {
-    console.log('[Content Script] Party not active, skipping sync manager initialization');
   }
 };
 

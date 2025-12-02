@@ -1,246 +1,489 @@
-# Netflix Party Sync - Complete Implementation ✅
+# ToperParty# Netflix Party Sync - Complete Implementation ✅
 
-## 🏗️ Refactored Architecture (Nov 2025)
 
-The extension has been refactored for maintainability with a modular `src/` structure:
 
-### Development Workflow
-```bash
-# Build for production (outputs to dist/)
-npm run build
+A Chrome extension for synchronized Netflix watch parties with video chat.## 🏗️ Refactored Architecture (Nov 2025)
 
-# Watch mode for development
+
+
+## FeaturesThe extension has been refactored for maintainability with a modular `src/` structure:
+
+
+
+- 🎬 **Synchronized Playback** - Watch Netflix together with automatic play/pause/seek synchronization### Development Workflow
+
+- 📹 **Video Chat** - Built-in WebRTC video and audio chat with draggable video feeds```bash
+
+- 🔄 **Smart Navigation** - Seamless video switching with automatic party restoration# Build for production (outputs to dist/)
+
+- 🎯 **Auto Volume Control** - Netflix volume automatically set to 15% when party startsnpm run build
+
+- 💪 **Robust Connection** - Heartbeat monitoring with automatic reconnection
+
+- 🌐 **Server-Side State** - Authoritative state management with automatic host migration# Watch mode for development
+
 npm run dev
 
-# Clean build artifacts
-npm run clean
-```
+## Architecture
 
-### Source Structure
-- `chrome-extension/src/` - New modular source layout
+# Clean build artifacts
+
+### Chrome Extension (Client)npm run clean
+
+- **Manifest V3** - Modern Chrome extension with service worker```
+
+- **Content Scripts** - Injected into Netflix pages for playback control
+
+- **WebRTC** - Peer-to-peer video/audio streaming### Source Structure
+
+- **Modular Design** - Clean separation of concerns with managers- `chrome-extension/src/` - New modular source layout
+
   - `background/` - Background script wiring
-  - `content/` - Content scripts and Netflix controller
-  - `ui/` - Popup and UI components
-  - `managers/` - State, sync, and URL management (split into submodules)
-  - `services/` - WebRTC and signaling services (modularized)
-  - `utils/` - Shared helpers
+
+### Signaling Server  - `content/` - Content scripts and Netflix controller
+
+- **Node.js + WebSocket** - Real-time communication server  - `ui/` - Popup and UI components
+
+- **Room-Based** - Multiple watch parties can run simultaneously  - `managers/` - State, sync, and URL management (split into submodules)
+
+- **State Management** - Server tracks playback state and handles host migration  - `services/` - WebRTC and signaling services (modularized)
+
+- **Health Monitoring** - HTTP status endpoint and heartbeat system  - `utils/` - Shared helpers
+
   - `types/` - Type declarations
 
+## Quick Start
+
 ### Build Output
-- `dist/` - Compiled extension ready to load in Chrome
-- Webpack bundles from `src/*/main.js` entries
-- Assets and manifest copied from `chrome-extension/`
+
+### Prerequisites- `dist/` - Compiled extension ready to load in Chrome
+
+- Node.js 18+ - Webpack bundles from `src/*/main.js` entries
+
+- Chrome/Chromium browser- Assets and manifest copied from `chrome-extension/`
+
+- Domain with SSL certificate (for production WebSocket server)
 
 See `ARCHITECTURE.md` for detailed module breakdown and migration notes.
 
+### Installation
+
 ---
 
-## 📋 Implementation Checklist
+1. **Clone the repository**
 
-### ✅ Chrome Extension Core Files
-- [x] `manifest.json` - Manifest V3 configuration with permissions
+   ```bash## 📋 Implementation Checklist
+
+   git clone https://github.com/jxt1009/toperparty.git
+
+   cd toperparty### ✅ Chrome Extension Core Files
+
+   ```- [x] `manifest.json` - Manifest V3 configuration with permissions
+
 - [x] `background.js` - Service worker with WebRTC and WebSocket logic
-- [x] `content-script.js` - Netflix page injection and playback monitoring
-- [x] `popup.html` - User interface for extension popup
-- [x] `popup.js` - Popup logic and messaging
-- [x] `styles.css` - Netflix-themed styling
+
+2. **Install dependencies**- [x] `content-script.js` - Netflix page injection and playback monitoring
+
+   ```bash- [x] `popup.html` - User interface for extension popup
+
+   npm install- [x] `popup.js` - Popup logic and messaging
+
+   ```- [x] `styles.css` - Netflix-themed styling
+
 - [x] **NEW**: Modular `src/` architecture with focused submodules
 
-### ✅ Extension Icons
-- [x] `images/icon16.svg` - Small icon
-- [x] `images/icon48.svg` - Medium icon
+3. **Build the extension**
+
+   ```bash### ✅ Extension Icons
+
+   npm run build- [x] `images/icon16.svg` - Small icon
+
+   ```- [x] `images/icon48.svg` - Medium icon
+
 - [x] `images/icon128.svg` - Large icon
 
-### ✅ Signaling Server
-- [x] `signaling_server/server.js` - Enhanced with room support
-- [x] Room-based message routing
-- [x] User tracking per room
+4. **Load in Chrome**
+
+   - Open `chrome://extensions/`### ✅ Signaling Server
+
+   - Enable "Developer mode"- [x] `signaling_server/server.js` - Enhanced with room support
+
+   - Click "Load unpacked"- [x] Room-based message routing
+
+   - Select the `dist` folder- [x] User tracking per room
+
 - [x] WebRTC signaling message exchange
 
+### Running the Signaling Server
+
 ### ✅ Documentation
-- [x] `QUICKSTART.md` - 30-second setup guide
-- [x] `SETUP.md` - Complete installation and troubleshooting
-- [x] `README.md` - Feature overview (this file)
-- [x] `IMPLEMENTATION_GUIDE.md` - Technical deep-dive
-- [x] `IMPLEMENTATION_SUMMARY.md` - Architecture overview
-- [x] `ARCHITECTURE.md` - Refactored structure and module breakdown
 
----
+**Development (Local):**- [x] `QUICKSTART.md` - 30-second setup guide
 
-## 🎯 Features Implemented
+```bash- [x] `SETUP.md` - Complete installation and troubleshooting
 
-### Core Features
+cd signaling_server- [x] `README.md` - Feature overview (this file)
+
+npm install- [x] `IMPLEMENTATION_GUIDE.md` - Technical deep-dive
+
+node server.js- [x] `IMPLEMENTATION_SUMMARY.md` - Architecture overview
+
+```- [x] `ARCHITECTURE.md` - Refactored structure and module breakdown
+
+
+
+**Production (Docker):**---
+
+```bash
+
+cd signaling_server## 🎯 Features Implemented
+
+docker-compose up -d
+
+```### Core Features
+
 - ✅ **Netflix Playback Sync** - Play/pause events sync across peers
-- ✅ **Time Sync** - Playback position syncs every 5 seconds
+
+The server runs on port 4001 with WebSocket endpoint at `/ws`.- ✅ **Time Sync** - Playback position syncs every 5 seconds
+
 - ✅ **Webcam Streaming** - Live video from camera to peers
-- ✅ **Microphone Streaming** - Live audio from mic to peers
+
+## Usage- ✅ **Microphone Streaming** - Live audio from mic to peers
+
 - ✅ **Room-Based Parties** - Isolated watch parties by room ID
-- ✅ **P2P Media** - Direct peer-to-peer for low latency
-- ✅ **Real-time Status** - Connection state monitoring
 
-### Technical Features
-- ✅ WebRTC peer connections with STUN support
-- ✅ DTLS-SRTP encryption for media
+1. **Start a Party**- ✅ **P2P Media** - Direct peer-to-peer for low latency
+
+   - Navigate to any Netflix video- ✅ **Real-time Status** - Connection state monitoring
+
+   - Click the ToperParty extension icon
+
+   - Enter a room ID (or generate one)### Technical Features
+
+   - Click "Start Party"- ✅ WebRTC peer connections with STUN support
+
+   - Share the room ID with friends- ✅ DTLS-SRTP encryption for media
+
 - ✅ WebSocket signaling for control
-- ✅ Automatic ICE candidate gathering
-- ✅ Content script injection into Netflix
-- ✅ Service worker for background execution
-- ✅ Multi-user party support
-- ✅ Room isolation and privacy
 
-### UI Features
-- ✅ Connection status indicator (connected/disconnected)
-- ✅ Room ID display and copy-to-clipboard
-- ✅ Local and remote video feeds
-- ✅ Play/pause buttons for quick control
+2. **Join a Party**- ✅ Automatic ICE candidate gathering
+
+   - Enter the same room ID as the host- ✅ Content script injection into Netflix
+
+   - Click "Start Party"- ✅ Service worker for background execution
+
+   - Grant camera/microphone permissions- ✅ Multi-user party support
+
+   - You'll automatically sync with the host's video- ✅ Room isolation and privacy
+
+
+
+3. **Watch Together**### UI Features
+
+   - Play/pause/seek are automatically synchronized- ✅ Connection status indicator (connected/disconnected)
+
+   - Navigate to different episodes/movies together- ✅ Room ID display and copy-to-clipboard
+
+   - Video feeds are draggable and can be repositioned- ✅ Local and remote video feeds
+
+   - Party state persists across page navigation- ✅ Play/pause buttons for quick control
+
 - ✅ Media stream status display
-- ✅ User ID and room ID tracking
+
+## Project Structure- ✅ User ID and room ID tracking
+
 - ✅ Netflix-themed dark UI
 
----
-
-## 🚀 How to Deploy
-
-### 1. Start Signaling Server
-```bash
-cd /Users/jtoper/DEV/toperparty/signaling_server
-npm install
-npm start
-```
-Output: `Signaling server listening on 0.0.0.0:4001`
-
-### 2. Load Extension in Chrome
-```
-1. Go to chrome://extensions/
-2. Enable "Developer mode" (top right)
-3. Click "Load unpacked"
-4. Select /Users/jtoper/DEV/toperparty/chrome-extension
 ```
 
-### 3. Use the Extension
+toperparty/---
+
+├── chrome-extension/
+
+│   ├── src/## 🚀 How to Deploy
+
+│   │   ├── background/       # Service worker
+
+│   │   ├── content/          # Content scripts### 1. Start Signaling Server
+
+│   │   ├── managers/         # State, Sync, URL managers```bash
+
+│   │   ├── services/         # WebRTC servicecd /Users/jtoper/DEV/toperparty/signaling_server
+
+│   │   └── ui/              # UI componentsnpm install
+
+│   ├── images/              # Extension iconsnpm start
+
+│   ├── manifest.json        # Extension manifest```
+
+│   ├── popup.html          # Extension popupOutput: `Signaling server listening on 0.0.0.0:4001`
+
+│   └── styles.css          # UI styles
+
+├── signaling_server/### 2. Load Extension in Chrome
+
+│   ├── server.js           # WebSocket signaling server```
+
+│   ├── Dockerfile          # Container configuration1. Go to chrome://extensions/
+
+│   └── docker-compose.yml  # Docker orchestration2. Enable "Developer mode" (top right)
+
+├── webpack.config.js       # Build configuration3. Click "Load unpacked"
+
+└── package.json           # Project dependencies4. Select /Users/jtoper/DEV/toperparty/chrome-extension
+
+``````
+
+
+
+## Development### 3. Use the Extension
+
 ```
-1. Go to netflix.com
+
+### Build Commands1. Go to netflix.com
+
 2. Click extension icon
-3. Click "Start Party"
-4. Allow camera/mic
-5. Share Room ID
-6. Friend joins with same Room ID
-```
 
----
+```bash3. Click "Start Party"
 
-## 📁 Complete File Structure
+npm run build          # Production build4. Allow camera/mic
 
-```
+npm run build:dev      # Development build with source maps5. Share Room ID
+
+npm run watch          # Watch mode for development6. Friend joins with same Room ID
+
+``````
+
+
+
+### Key Components---
+
+
+
+**StateManager** - Manages party state (userId, roomId, active status)## 📁 Complete File Structure
+
+
+
+**SyncManager** - Handles playback synchronization with lock mechanism```
+
 /Users/jtoper/DEV/toperparty/
-│
+
+**WebRTCManager** - Manages peer connections and media streams│
+
 ├── README Files (START HERE)
-│   ├── QUICKSTART.md                ← 30-second setup
+
+**URLSync** - Monitors URL changes and triggers re-initialization│   ├── QUICKSTART.md                ← 30-second setup
+
 │   ├── IMPLEMENTATION_GUIDE.md       ← Technical details
-│   ├── IMPLEMENTATION_SUMMARY.md     ← Overview
+
+**BackgroundService** - WebSocket connection and message routing│   ├── IMPLEMENTATION_SUMMARY.md     ← Overview
+
 │   ├── ARCHITECTURE.md               ← Diagrams & flow
-│
+
+### Message Flow│
+
 ├── signaling_server/
-│   ├── server.js                     ← WebSocket server (MODIFIED)
-│   │   ├─ Room management
-│   │   ├─ User tracking
-│   │   ├─ Message routing
-│   │   └─ Multi-party support
-│   ├── package.json
+
+1. User action (play/pause/seek) → Video event│   ├── server.js                     ← WebSocket server (MODIFIED)
+
+2. SyncManager → Content script│   │   ├─ Room management
+
+3. Content script → Background service worker│   │   ├─ User tracking
+
+4. Background → Signaling server via WebSocket│   │   ├─ Message routing
+
+5. Server → Other clients in room│   │   └─ Multi-party support
+
+6. Other clients → Apply action locally│   ├── package.json
+
 │   ├── package-lock.json
-│   ├── Dockerfile
+
+### WebRTC Signaling│   ├── Dockerfile
+
 │   ├── docker-compose.yml
-│   └── watch.toper.dev              ← Domain config
-│
-└── chrome-extension/
-    ├── manifest.json                ← Extension config
-    │   ├─ Manifest V3
-    │   ├─ Permissions
+
+- **OFFER/ANSWER** - WebRTC negotiation (targeted to specific peer)│   └── watch.toper.dev              ← Domain config
+
+- **ICE_CANDIDATE** - Network candidate exchange (targeted)│
+
+- **JOIN** - User joins room (broadcast)└── chrome-extension/
+
+- **LEAVE** - User leaves room (broadcast)    ├── manifest.json                ← Extension config
+
+- **PLAY_PAUSE/SEEK** - Playback control (broadcast)    │   ├─ Manifest V3
+
+- **URL_CHANGE** - Navigation sync (broadcast)    │   ├─ Permissions
+
     │   ├─ Content scripts
-    │   └─ Background worker
+
+## Configuration    │   └─ Background worker
+
     │
-    ├── background.js                ← Service worker
-    │   ├─ WebSocket client
+
+### Extension    ├── background.js                ← Service worker
+
+Update `chrome-extension/manifest.json` for permissions and content script rules.    │   ├─ WebSocket client
+
     │   ├─ WebRTC peer manager
-    │   ├─ Media stream handler
-    │   ├─ Message router
-    │   └─ User ID generator
-    │
-    ├── content-script.js            ← Netflix injection
+
+### Signaling Server    │   ├─ Media stream handler
+
+Update WebSocket URL in `BackgroundService.js`:    │   ├─ Message router
+
+```javascript    │   └─ User ID generator
+
+this.ws = new WebSocket('ws://your-domain.com/ws');    │
+
+```    ├── content-script.js            ← Netflix injection
+
     │   ├─ Video element detection
-    │   ├─ Play/pause monitoring
-    │   ├─ Time sync sender
-    │   ├─ Control application
-    │   └─ Playback sync setup
-    │
+
+### WebRTC STUN Servers    │   ├─ Play/pause monitoring
+
+Configure in `chrome-extension/src/services/webrtc/peerConnection.js`:    │   ├─ Time sync sender
+
+```javascript    │   ├─ Control application
+
+iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]    │   └─ Playback sync setup
+
+```    │
+
     ├── popup.html                   ← Extension UI
-    │   ├─ Status display
+
+## Troubleshooting    │   ├─ Status display
+
     │   ├─ Start/stop buttons
-    │   ├─ Room ID input
-    │   ├─ Video feeds
-    │   └─ Media controls
-    │
+
+### Extension not connecting    │   ├─ Room ID input
+
+- Check signaling server is running    │   ├─ Video feeds
+
+- Verify WebSocket URL is correct    │   └─ Media controls
+
+- Check browser console for errors    │
+
     ├── popup.js                     ← Popup logic
-    │   ├─ Status polling
-    │   ├─ Party management
-    │   ├─ Video stream display
-    │   └─ Message passing
+
+### Video not syncing after navigation    │   ├─ Status polling
+
+- Check `[SyncManager]` logs in console    │   ├─ Party management
+
+- Verify sync manager is re-initializing on navigation    │   ├─ Video stream display
+
+- Ensure party state is active    │   └─ Message passing
+
     │
-    ├── styles.css                   ← Styling
-    │   ├─ Netflix theme
-    │   ├─ Dark mode
-    │   ├─ Video grid
-    │   └─ Button styles
+
+### WebRTC connection failing    ├── styles.css                   ← Styling
+
+- Grant camera/microphone permissions    │   ├─ Netflix theme
+
+- Check firewall/NAT settings    │   ├─ Dark mode
+
+- Verify STUN server accessibility    │   ├─ Video grid
+
+- Consider adding TURN server for restricted networks    │   └─ Button styles
+
     │
-    ├── images/
-    │   ├── icon16.svg               ← 16x16 icon
-    │   ├── icon48.svg               ← 48x48 icon
-    │   └── icon128.svg              ← 128x128 icon
+
+### Events not reaching server    ├── images/
+
+- Check `[Background]` logs in service worker console    │   ├── icon16.svg               ← 16x16 icon
+
+- Verify WebSocket connection is open    │   ├── icon48.svg               ← 48x48 icon
+
+- Check sync manager is attached to correct video element    │   └── icon128.svg              ← 128x128 icon
+
     │
-    └── Documentation
+
+## Technical Details    └── Documentation
+
         ├── README.md                ← Feature reference
-        ├── SETUP.md                 ← Detailed setup
-        └── [Top-level docs above]
-```
 
----
+### Navigation Handling        ├── SETUP.md                 ← Detailed setup
 
-## 🔄 Data Flow Summary
+The extension handles three navigation scenarios:        └── [Top-level docs above]
 
-```
-PLAYBACK SYNC:
-Netflix Video ─► Content Script ─► Background ─► WebSocket ─► Server ─► Other Users
+1. **Between /watch pages** - Teardown and re-setup sync manager```
 
-MEDIA STREAMING:
-Camera/Mic ─► getUserMedia() ─► WebRTC ─► STUN/TURN ─► Other Users' WebRTC ─► Display
+2. **To /watch from elsewhere** - Initialize sync manager if party active
 
-ROOM MANAGEMENT:
-JOIN ─► WebSocket ─► Server ─► Broadcasts ─► Other Users in Same Room
+3. **Away from /watch** - Save state and pause for all users---
 
-CONTROL:
-UI Button ─► Message ─► Content Script ─► Netflix Player
-```
 
----
 
-## 📊 Architecture Overview
+### WebSocket Connection## 🔄 Data Flow Summary
 
-```
-┌─ User A ─────────────────────────────────────┐
-│ Netflix Tab ◄─ Extension Popup              │
-│      │              │                         │
+- Background service worker maintains persistent WebSocket
+
+- Connection reused across page navigation (RESTORE_PARTY)```
+
+- Heartbeat system (15s ping, 10s timeout, 3-miss threshold)PLAYBACK SYNC:
+
+- Automatic reconnection with exponential backoffNetflix Video ─► Content Script ─► Background ─► WebSocket ─► Server ─► Other Users
+
+
+
+### Video Element SelectionMEDIA STREAMING:
+
+Sync manager excludes ToperParty video elements (local/remote previews) and targets only the Netflix player:Camera/Mic ─► getUserMedia() ─► WebRTC ─► STUN/TURN ─► Other Users' WebRTC ─► Display
+
+```javascript
+
+getVideoElement() {ROOM MANAGEMENT:
+
+  const videos = document.querySelectorAll('video');JOIN ─► WebSocket ─► Server ─► Broadcasts ─► Other Users in Same Room
+
+  for (const video of videos) {
+
+    if (!video.id || !video.id.startsWith('toperparty-')) {CONTROL:
+
+      return video;UI Button ─► Message ─► Content Script ─► Netflix Player
+
+    }```
+
+  }
+
+  return null;---
+
+}
+
+```## 📊 Architecture Overview
+
+
+
+### Server Message Routing```
+
+- **Targeted messages** (OFFER, ANSWER, ICE_CANDIDATE) - Sent only to specific recipient┌─ User A ─────────────────────────────────────┐
+
+- **Broadcast messages** (JOIN, LEAVE, PLAY_PAUSE, SEEK, URL_CHANGE) - Sent to all room members│ Netflix Tab ◄─ Extension Popup              │
+
+- Server maintains room state and handles automatic host migration│      │              │                         │
+
 │      │         Content Script                │
-│      │              │                         │
+
+## License│      │              │                         │
+
 │    Video           │                          │
-│    Player ◄─────────┴─ Background Service   │
+
+MIT│    Player ◄─────────┴─ Background Service   │
+
 │                          Worker             │
-│                             │                │
+
+## Contributing│                             │                │
+
 │                      ┌──────┴─────┐         │
-│                      │             │        │
-│              WebSocket      WebRTC │        │
-│                      │             │        │
-└──────────────────────┼─────────────┼───────┘
-                       │             │
+
+Pull requests welcome! Please ensure:│                      │             │        │
+
+- Code follows existing style│              WebSocket      WebRTC │        │
+
+- All console logs use appropriate prefixes (e.g., `[SyncManager]`, `[WebRTCManager]`)│                      │             │        │
+
+- Test with multiple users in a party└──────────────────────┼─────────────┼───────┘
+
+- Verify navigation and reconnection scenarios work correctly                       │             │
+
                     ┌──┴──┐      STUN/TURN
                     │     │          │
               Server      │    P2P Connection
