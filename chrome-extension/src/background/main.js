@@ -126,7 +126,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     backgroundService.broadcastMessage({
       type: 'REQUEST_SYNC',
       userId: backgroundService.userId,
-      roomId: backgroundService.roomId
+      roomId: backgroundService.roomId,
+      respectAutoPlay: request.respectAutoPlay || false
     });
     sendResponse({ success: true });
   }
@@ -140,6 +141,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         currentTime: request.currentTime,
         isPlaying: request.isPlaying,
         url: request.url,
+        respectAutoPlay: request.respectAutoPlay || false,
         fromUserId: backgroundService.userId,
         roomId: backgroundService.roomId
       }));

@@ -7,7 +7,7 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
   }
 
   return {
-    async handleRequestSync(fromUserId) {
+    async handleRequestSync(fromUserId, respectAutoPlay = false) {
       if (!isInitializedRef.get()) {
         console.log('[SyncManager] Not yet initialized, ignoring sync request');
         return;
@@ -32,18 +32,19 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
         }
         
         const currentTimeSeconds = currentTime / 1000;
-        console.log('[SyncManager] Sending SYNC_RESPONSE to', fromUserId, 'at', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing', 'URL:', currentUrl);
+        console.log('[SyncManager] Sending SYNC_RESPONSE to', fromUserId, 'at', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing', 'URL:', currentUrl, respectAutoPlay ? '(will respect auto-play)' : '');
         
         state.safeSendMessage({
           type: 'SYNC_RESPONSE',
           targetUserId: fromUserId,
           currentTime: currentTimeSeconds,
           isPlaying: !isPaused,
-          url: currentUrl
+          url: currentUrl,
+          respectAutoPlay: respectAutoPlay
         });
       } catch (e) { console.error('[SyncManager] Error handling sync request:', e); }
     },
-    async handleSyncResponse(currentTime, isPlaying, fromUserId, url) {
+    async handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay = false) {
       if (isInitializedRef.get()) {
         console.log('[SyncManager] Already initialized, ignoring late SYNC_RESPONSE');
         return;
@@ -54,7 +55,11 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
         return;
       }
       
-      console.log('[SyncManager] Initial sync from', fromUserId, 'seeking to', currentTime.toFixed(2) + 's', isPlaying ? 'playing' : 'paused', 'URL:', url);
+      if (respectAutoPlay) {
+        console.log('[SyncManager] Initial sync from', fromUserId, 'seeking to', currentTime.toFixed(2) + 's (respecting auto-play)');
+      } else {
+        console.log('[SyncManager] Initial sync from', fromUserId, 'seeking to', currentTime.toFixed(2) + 's', isPlaying ? 'playing' : 'paused', 'URL:', url);
+      }
       
       // Check if we need to navigate to a different URL
       const currentUrl = window.location.href;
@@ -101,9 +106,16 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
       
       await applyRemote('initial-sync', 1500, async () => {
         await netflix.seek(currentTime * 1000);
+        
+        // If respecting auto-play, only sync timestamp, not play/pause state
+        if (respectAutoPlay) {
+          console.log('[SyncManager] Synced timestamp only, respecting Netflix auto-play');
+          return;
+        }
+        
         const localPaused = await netflix.isPaused();
         
-        // Always sync to the remote state
+        // Sync to the remote play/pause state
         if (isPlaying && localPaused) {
           console.log('[SyncManager] Remote is playing, starting playback');
           await netflix.play();

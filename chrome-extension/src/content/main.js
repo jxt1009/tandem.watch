@@ -332,7 +332,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('[Content Script] Ignoring sync request - not on /watch page');
       return;
     }
-    syncManager.handleRequestSync(request.fromUserId);
+    syncManager.handleRequestSync(request.fromUserId, request.respectAutoPlay);
   }
 
   if (request.type === 'APPLY_SYNC_RESPONSE') {
@@ -341,8 +341,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('[Content Script] Ignoring sync response - not on /watch page');
       return;
     }
-    console.log('[Content Script] Applying sync response from', request.fromUserId, 'URL:', request.url);
-    syncManager.handleSyncResponse(request.currentTime, request.isPlaying, request.fromUserId, request.url);
+    console.log('[Content Script] Applying sync response from', request.fromUserId, 'URL:', request.url, request.respectAutoPlay ? '(respecting auto-play)' : '');
+    syncManager.handleSyncResponse(request.currentTime, request.isPlaying, request.fromUserId, request.url, request.respectAutoPlay);
   }
 
   if (request.type === 'REQUEST_INITIAL_SYNC_AND_PLAY') {

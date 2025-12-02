@@ -191,7 +191,7 @@ export class BackgroundService {
       if (message.type === 'REQUEST_SYNC' && message.userId !== this.userId) {
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'HANDLE_REQUEST_SYNC', fromUserId: message.userId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'HANDLE_REQUEST_SYNC', fromUserId: message.userId, respectAutoPlay: message.respectAutoPlay || false }).catch(() => {});
           });
         });
       }
@@ -199,7 +199,7 @@ export class BackgroundService {
         console.log('[BackgroundService] Received SYNC_RESPONSE for me, forwarding to content with URL:', message.url);
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_SYNC_RESPONSE', currentTime: message.currentTime, isPlaying: message.isPlaying, fromUserId: message.fromUserId, url: message.url }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_SYNC_RESPONSE', currentTime: message.currentTime, isPlaying: message.isPlaying, fromUserId: message.fromUserId, url: message.url, respectAutoPlay: message.respectAutoPlay || false }).catch(() => {});
           });
         });
       }

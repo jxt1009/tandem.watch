@@ -86,12 +86,21 @@ export class SyncManager {
       this.isInitializedRef.set(false);
       
       // Check if we just navigated from browse - if so, respect Netflix's auto-play intent
+      // but still request sync to match timestamp
       const fromBrowse = sessionStorage.getItem('toperparty_from_browse');
       if (fromBrowse === 'true') {
-        console.log('[SyncManager] Just navigated from browse - respecting auto-play, not requesting sync');
+        console.log('[SyncManager] Just navigated from browse - will respect auto-play but sync timestamp');
         sessionStorage.removeItem('toperparty_from_browse');
-        // Mark as initialized immediately so we don't pause on sync responses
-        this.isInitializedRef.set(true);
+        // Request sync to get timestamp, but we'll only sync position not play/pause state
+        this.state.safeSendMessage({ type: 'REQUEST_SYNC', respectAutoPlay: true });
+        
+        // If no response after 2 seconds, consider ourselves initialized
+        setTimeout(() => {
+          if (!this.isInitializedRef.get()) {
+            console.log('[SyncManager] No sync response received after 2s, marking as initialized');
+            this.isInitializedRef.set(true);
+          }
+        }, 2000);
       } else {
         // Request initial sync from other clients
         console.log('[SyncManager] Requesting initial sync from other clients');
@@ -196,8 +205,8 @@ export class SyncManager {
   }
 
   // Remote event handlers
-  handleRequestSync(fromUserId) { return this.remote.handleRequestSync(fromUserId); }
-  handleSyncResponse(currentTime, isPlaying, fromUserId, url) { return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId, url); }
+  handleRequestSync(fromUserId, respectAutoPlay) { return this.remote.handleRequestSync(fromUserId, respectAutoPlay); }
+  handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay) { return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay); }
   handlePlaybackControl(control, currentTime, fromUserId) { return this.remote.handlePlaybackControl(control, currentTime, fromUserId); }
   handleSeek(currentTime, isPlaying, fromUserId) { return this.remote.handleSeek(currentTime, isPlaying, fromUserId); }
 }
