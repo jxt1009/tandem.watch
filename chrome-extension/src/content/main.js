@@ -257,25 +257,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
     
-    // Only apply URL changes to /watch pages
+    // Apply URL changes to all Netflix pages (browse, title, watch, etc.)
     const incomingUrl = new URL(request.url);
+    const currentUrl = window.location.href;
+    
+    // Don't navigate if we're already on this URL
+    if (currentUrl === request.url) {
+      console.log('[Content Script] Already on this URL, skipping navigation');
+      return;
+    }
+    
+    console.log('[Content Script] Navigating to:', request.url);
+    // Save state before navigating (for restoration if on /watch page)
     const currentPath = window.location.pathname;
-    const isOnWatch = currentPath.startsWith('/watch');
-    const incomingIsWatch = incomingUrl.pathname.startsWith('/watch');
-    
-    if (!incomingIsWatch) {
-      console.log('[Content Script] Ignoring URL change - incoming URL is not a /watch page:', incomingUrl.pathname);
-      return;
+    if (currentPath.startsWith('/watch')) {
+      urlSync.saveState();
     }
-    
-    if (!isOnWatch) {
-      console.log('[Content Script] Ignoring URL change - not currently on a /watch page (on:', currentPath + ')');
-      return;
-    }
-    
-    console.log('[Content Script] Navigating to new watch page:', request.url);
-    // Save state before navigating
-    urlSync.saveState();
     window.location.href = request.url;
   }
 
