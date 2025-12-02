@@ -8,31 +8,71 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
         return;
       }
       peersThatLeft.delete(from);
-      if (peerConnections.has(from)) {
-        console.log('[Signaling] Already have peer connection for', from);
-        return;
-      }
-      try {
-        console.log('[Signaling] Creating peer connection for', from);
-        const pc = createPeer(from);
-        peerConnections.set(from, pc);
-        const stream = getLocalStream();
-        console.log('[Signaling] Local stream:', stream, 'tracks:', stream ? stream.getTracks().length : 0);
-        if (stream) {
-          stream.getTracks().forEach(t => {
-            console.log('[Signaling] Adding local track to peer:', t.kind, t.id);
-            addOrReplaceTrack(pc, t, stream);
-          });
-        } else {
-          console.warn('[Signaling] No local stream available when handling JOIN');
+      
+      let pc = peerConnections.get(from);
+      if (pc) {
+        const connectionState = pc.connectionState;
+        console.log('[Signaling] Already have peer connection for', from, 'state:', connectionState);
+        
+        // If connection is still good, just ensure tracks are added and renegotiate
+        if (connectionState === 'connected' || connectionState === 'connecting') {
+          console.log('[Signaling] Reusing existing connection - ensuring tracks are present');
+          const stream = getLocalStream();
+          if (stream) {
+            let needsRenegotiation = false;
+            stream.getTracks().forEach(t => {
+              const senders = pc.getSenders();
+              const existingSender = senders.find(s => s.track && s.track.kind === t.kind);
+              if (!existingSender || existingSender.track.id !== t.id) {
+                console.log('[Signaling] Track changed, replacing:', t.kind, t.id);
+                addOrReplaceTrack(pc, t, stream);
+                needsRenegotiation = true;
+              }
+            });
+            
+            // Only renegotiate if tracks changed
+            if (needsRenegotiation && pc.signalingState === 'stable') {
+              console.log('[Signaling] Renegotiating due to track changes');
+              const offer = await pc.createOffer();
+              await pc.setLocalDescription(offer);
+              sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
+            }
+          }
+          return;
         }
-        console.log('[Signaling] Creating and sending OFFER to', from);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
-      } catch (err) {
-        console.error('[Signaling] Error handling JOIN:', err);
-        peerConnections.delete(from);
+        
+        // If connection is failed/closed, clean it up
+        if (connectionState === 'failed' || connectionState === 'closed') {
+          console.log('[Signaling] Cleaning up failed/closed connection');
+          try { pc.close(); } catch (e) {}
+          peerConnections.delete(from);
+          pc = null;
+        }
+      }
+      
+      if (!pc) {
+        try {
+          console.log('[Signaling] Creating new peer connection for', from);
+          pc = createPeer(from);
+          peerConnections.set(from, pc);
+          const stream = getLocalStream();
+          console.log('[Signaling] Local stream:', stream, 'tracks:', stream ? stream.getTracks().length : 0);
+          if (stream) {
+            stream.getTracks().forEach(t => {
+              console.log('[Signaling] Adding local track to peer:', t.kind, t.id);
+              addOrReplaceTrack(pc, t, stream);
+            });
+          } else {
+            console.warn('[Signaling] No local stream available when handling JOIN');
+          }
+          console.log('[Signaling] Creating and sending OFFER to', from);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
+        } catch (err) {
+          console.error('[Signaling] Error handling JOIN:', err);
+          peerConnections.delete(from);
+        }
       }
     },
     async handleOffer(from, offer) {

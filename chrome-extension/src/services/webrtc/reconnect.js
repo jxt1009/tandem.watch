@@ -19,11 +19,14 @@ export function createReconnectionManager({ stateManager, peerConnections, peers
     }
     const count = attempts.get(peerId) || 0;
     const maxAttempts = 5;
-    const backoffDelay = Math.min(1000 * Math.pow(2, count), 30000);
+    // Faster reconnection: 500ms, 1s, 2s, 4s, 8s (instead of 1s, 2s, 4s, 8s, 16s)
+    const backoffDelay = Math.min(500 * Math.pow(2, count), 10000);
     if (count >= maxAttempts) {
+      console.log('[Reconnection] Max attempts reached for peer:', peerId);
       clear(peerId);
       return;
     }
+    console.log('[Reconnection] Attempting reconnection for peer:', peerId, 'attempt:', count + 1, 'delay:', backoffDelay + 'ms');
     attempts.set(peerId, count + 1);
     const existing = timeouts.get(peerId);
     if (existing) clearTimeout(existing);

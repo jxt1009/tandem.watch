@@ -51,11 +51,22 @@ export function createPeerConnectionFactory({ stateManager, sendSignal, remoteSt
       console.log('[PeerConnection] Connection state changed for peer:', peerId, '→', pc.connectionState);
       if (pc.connectionState === 'connected') {
         clearReconnection(peerId);
-      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      } else if (pc.connectionState === 'disconnected') {
         if (peersThatLeft.has(peerId)) {
           removeRemoteVideo(peerId);
           clearReconnection(peerId);
         } else {
+          // Keep video visible while reconnecting - don't remove immediately
+          console.log('[PeerConnection] Connection disconnected, attempting reconnection while keeping video visible');
+          attemptReconnection(peerId);
+        }
+      } else if (pc.connectionState === 'failed') {
+        console.log('[PeerConnection] Connection failed for peer:', peerId);
+        if (peersThatLeft.has(peerId)) {
+          removeRemoteVideo(peerId);
+          clearReconnection(peerId);
+        } else {
+          // Remove video on failed state and try to reconnect
           removeRemoteVideo(peerId);
           attemptReconnection(peerId);
         }
