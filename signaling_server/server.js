@@ -6,6 +6,17 @@ const HOST = '0.0.0.0';
 
 // Simple HTTP server with status endpoint
 const server = http.createServer((req, res) => {
+  // Add CORS headers for all requests
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+  
   if (req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     const status = {
@@ -234,6 +245,18 @@ wss.on('connection', (ws, req) => {
           
           console.log(`Room ${roomId} seeked to ${state.currentTime}s`);
         }
+      }
+
+      // Handle position updates (client reporting their position without broadcasting)
+      if (type === 'POSITION_UPDATE' && roomId && userId) {
+        const state = roomState.get(roomId);
+        if (state && state.users && state.users.has(userId)) {
+          state.users.get(userId).currentTime = parsed.currentTime || 0;
+          state.users.get(userId).isPlaying = parsed.isPlaying || false;
+          state.users.get(userId).lastUpdate = Date.now();
+          console.log(`User ${userId} position updated: ${parsed.currentTime}s ${parsed.isPlaying ? 'playing' : 'paused'}`);
+        }
+        return; // Don't broadcast this
       }
 
       // Handle sync requests with server-side state

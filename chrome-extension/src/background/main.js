@@ -111,6 +111,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (request.type === 'POSITION_UPDATE') {
+    // Send position update to server without broadcasting to other clients
+    backgroundService.broadcastMessage({
+      type: 'POSITION_UPDATE',
+      currentTime: request.currentTime,
+      isPlaying: request.isPlaying,
+      userId: backgroundService.userId,
+      roomId: backgroundService.roomId
+    });
+    sendResponse({ success: true });
+  }
+
   if (request.type === 'URL_CHANGE') {
     console.log('[Background] Broadcasting URL_CHANGE:', request.url);
     backgroundService.broadcastMessage({

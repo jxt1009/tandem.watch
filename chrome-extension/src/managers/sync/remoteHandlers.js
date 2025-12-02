@@ -110,6 +110,13 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
         // If respecting auto-play, only sync timestamp, not play/pause state
         if (respectAutoPlay) {
           console.log('[SyncManager] Synced timestamp only, respecting Netflix auto-play');
+          // Report position to server
+          const finalPaused = await netflix.isPaused();
+          state.safeSendMessage({
+            type: 'POSITION_UPDATE',
+            currentTime: currentTime,
+            isPlaying: !finalPaused
+          });
           return;
         }
         
@@ -123,6 +130,13 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
           console.log('[SyncManager] Remote is paused, pausing playback');
           await netflix.pause();
         }
+        
+        // Report final position to server after sync complete
+        state.safeSendMessage({
+          type: 'POSITION_UPDATE',
+          currentTime: currentTime,
+          isPlaying: isPlaying
+        });
       });
     },
     async handlePlaybackControl(control, currentTime, fromUserId) {

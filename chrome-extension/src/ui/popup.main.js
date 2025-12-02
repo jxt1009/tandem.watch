@@ -129,31 +129,35 @@ function startStatusPolling() {
 
 async function updateStats() {
   if (!status.isConnected || !status.roomId) {
-    console.log('[Popup] Not connected or no room ID');
+    console.log('[Popup] Not connected or no room ID', { isConnected: status.isConnected, roomId: status.roomId });
     return;
   }
 
   try {
     // Fetch stats from signaling server
+    console.log('[Popup] Fetching stats from server...');
     const response = await fetch('http://watch.toper.dev/status');
     if (!response.ok) {
-      console.error('[Popup] Failed to fetch server status');
+      console.error('[Popup] Failed to fetch server status:', response.status, response.statusText);
       return;
     }
 
     const serverStatus = await response.json();
-    console.log('[Popup] Server status:', serverStatus);
+    console.log('[Popup] Server status received:', serverStatus);
+    console.log('[Popup] Looking for room:', status.roomId);
 
     // Find our room
     const room = serverStatus.rooms?.find(r => r.roomId === status.roomId);
     if (!room) {
-      console.log('[Popup] Room not found on server');
+      console.log('[Popup] Room not found on server. Available rooms:', serverStatus.rooms?.map(r => r.roomId));
       if (syncStatusEl) {
         syncStatusEl.textContent = 'Not Found';
         syncStatusEl.style.color = '#ef4444';
       }
       return;
     }
+    
+    console.log('[Popup] Room found:', room);
 
     const formatTime = (seconds) => {
       if (!seconds && seconds !== 0) return '--:--';
