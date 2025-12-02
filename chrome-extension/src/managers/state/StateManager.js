@@ -9,11 +9,15 @@ export class StateManager {
     this.partyActive = true;
     this.userId = userId;
     this.roomId = roomId;
+    // Set flag so videos persist across navigation
+    sessionStorage.setItem('toperparty_was_active', 'true');
   }
   stopParty() {
     this.partyActive = false;
     this.userId = null;
     this.roomId = null;
+    // Clear flag so videos are cleaned up
+    sessionStorage.removeItem('toperparty_was_active');
   }
   isActive() { return this.partyActive; }
   getUserId() { return this.userId; }

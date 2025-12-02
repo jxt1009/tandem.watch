@@ -7,33 +7,39 @@ import { URLSync } from '../managers/url/URLSync.js';
 
 console.log('[Content Script] Initializing managers...');
 
-// Clean up any stale ToperParty elements from previous extension loads
-console.log('[Content Script] Cleaning up stale elements from previous extension instance...');
-const staleContainers = document.querySelectorAll('[id^="toperparty-container-"]');
-const staleVideos = document.querySelectorAll('[id^="toperparty-remote-"]');
-const staleOverlays = document.querySelectorAll('[id^="toperparty-overlay-"]');
-const staleLocalVideo = document.getElementById('toperparty-local-preview');
-const staleWaitingIndicator = document.getElementById('toperparty-waiting-indicator');
+// Don't clean up stale elements on navigation - they should persist
+// Only clean up if party is not active
+const wasPartyActive = sessionStorage.getItem('toperparty_was_active') === 'true';
+if (!wasPartyActive) {
+  console.log('[Content Script] No active party detected, cleaning up stale elements...');
+  const staleContainers = document.querySelectorAll('[id^="toperparty-container-"]');
+  const staleVideos = document.querySelectorAll('[id^="toperparty-remote-"]');
+  const staleOverlays = document.querySelectorAll('[id^="toperparty-overlay-"]');
+  const staleLocalVideo = document.getElementById('toperparty-local-preview');
+  const staleWaitingIndicator = document.getElementById('toperparty-waiting-indicator');
 
-staleContainers.forEach(el => {
-  console.log('[Content Script] Removing stale container:', el.id);
-  el.remove();
-});
-staleVideos.forEach(el => {
-  console.log('[Content Script] Removing stale video:', el.id);
-  el.remove();
-});
-staleOverlays.forEach(el => {
-  console.log('[Content Script] Removing stale overlay:', el.id);
-  el.remove();
-});
-if (staleLocalVideo) {
-  console.log('[Content Script] Removing stale local video');
-  staleLocalVideo.remove();
-}
-if (staleWaitingIndicator) {
-  console.log('[Content Script] Removing stale waiting indicator');
-  staleWaitingIndicator.remove();
+  staleContainers.forEach(el => {
+    console.log('[Content Script] Removing stale container:', el.id);
+    el.remove();
+  });
+  staleVideos.forEach(el => {
+    console.log('[Content Script] Removing stale video:', el.id);
+    el.remove();
+  });
+  staleOverlays.forEach(el => {
+    console.log('[Content Script] Removing stale overlay:', el.id);
+    el.remove();
+  });
+  if (staleLocalVideo) {
+    console.log('[Content Script] Removing stale local video');
+    staleLocalVideo.remove();
+  }
+  if (staleWaitingIndicator) {
+    console.log('[Content Script] Removing stale waiting indicator');
+    staleWaitingIndicator.remove();
+  }
+} else {
+  console.log('[Content Script] Party is active, keeping existing video elements');
 }
 
 const stateManager = new StateManager();
@@ -76,6 +82,22 @@ console.log('[Content Script] Managers initialized');
 let localStream = null;
 let videoElementMonitor = null;
 
+// If party was active before this page load, try to restore videos immediately
+if (wasPartyActive) {
+  console.log('[Content Script] Party was active, checking for restoration state...');
+  setTimeout(() => {
+    // Give the page a moment to initialize
+    const state = stateManager.getState();
+    if (state.partyActive && localStream) {
+      console.log('[Content Script] Restoring local preview video after navigation');
+      const existingPreview = document.getElementById('toperparty-local-preview');
+      if (!existingPreview) {
+        uiManager.attachLocalPreview(localStream);
+      }
+    }
+  }, 100);
+}
+
 // Monitor and restore video elements if they get removed during navigation
 function startVideoElementMonitoring() {
   if (videoElementMonitor) return;
@@ -103,7 +125,7 @@ function startVideoElementMonitoring() {
         }
       }
     });
-  }, 1000); // Check every second
+  }, 250); // Check every 250ms for faster restoration
   
   console.log('[Content Script] Started video element monitoring');
 }

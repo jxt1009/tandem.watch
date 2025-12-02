@@ -95,7 +95,7 @@ export class UIManager {
     v.style.left = '20px';
     v.style.width = '240px';
     v.style.height = '160px';
-    v.style.zIndex = '10001';
+    v.style.zIndex = '999999';
     v.style.border = '2px solid #e50914';
     v.style.borderRadius = '4px';
     v.style.transform = 'scaleX(-1)'; // Mirror for natural preview

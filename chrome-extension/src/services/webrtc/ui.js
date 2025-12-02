@@ -104,7 +104,7 @@ export function createRemoteVideoManager(remoteVideos) {
       container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
       container.style.width = '240px';
       container.style.height = '160px';
-      container.style.zIndex = 10001;
+      container.style.zIndex = 999999;
       container.style.border = '2px solid #00aaff';
       container.style.borderRadius = '4px';
       container.style.backgroundColor = '#000';
@@ -360,7 +360,7 @@ export function createRemoteVideoManager(remoteVideos) {
     container.style.right = '20px';
     container.style.width = '240px';
     container.style.height = '160px';
-    container.style.zIndex = 10001;
+    container.style.zIndex = 999999;
     container.style.border = '2px solid #00aaff';
     container.style.borderRadius = '4px';
     container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
@@ -415,7 +415,7 @@ export function createRemoteVideoManager(remoteVideos) {
     container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
     container.style.width = '240px';
     container.style.height = '160px';
-    container.style.zIndex = 10001;
+    container.style.zIndex = 999999;
     container.style.border = '2px solid #00aaff';
     container.style.borderRadius = '4px';
     container.style.backgroundColor = '#000';
