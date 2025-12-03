@@ -182,7 +182,7 @@ export class UIManager {
 
     const text = document.createElement('span');
     text.id = 'toperparty-connection-text';
-    text.textContent = 'Party Active';
+    text.textContent = 'Connected';
 
     indicator.appendChild(dot);
     indicator.appendChild(text);
@@ -190,10 +190,15 @@ export class UIManager {
 
     // Add pulse animation
     const style = document.createElement('style');
+    style.id = 'toperparty-connection-style';
     style.textContent = `
       @keyframes pulse {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.5; }
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
       }
     `;
     document.head.appendChild(style);
@@ -201,17 +206,23 @@ export class UIManager {
     return indicator;
   }
 
-  updateConnectionIndicator(connected) {
+  updateConnectionIndicator(status) {
     const dot = document.getElementById('toperparty-connection-dot');
     const text = document.getElementById('toperparty-connection-text');
     
     if (dot && text) {
-      if (connected) {
+      if (status === 'connected') {
         dot.style.background = '#4ade80';
-        text.textContent = 'Party Active';
-      } else {
-        dot.style.background = '#ef4444';
+        dot.style.animation = 'pulse 2s ease-in-out infinite';
+        text.textContent = 'Connected';
+      } else if (status === 'reconnecting') {
+        dot.style.background = '#f59e0b';
+        dot.style.animation = 'spin 1s linear infinite';
         text.textContent = 'Reconnecting...';
+      } else if (status === 'disconnected') {
+        dot.style.background = '#ef4444';
+        dot.style.animation = 'pulse 1s ease-in-out infinite';
+        text.textContent = 'Disconnected';
       }
     }
   }

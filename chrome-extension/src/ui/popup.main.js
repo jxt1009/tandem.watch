@@ -158,25 +158,40 @@ async function updateStats() {
     }
     
     console.log('[Popup] Room found:', room);
+    console.log('[Popup] Room currentTime:', room.currentTime, 'isPlaying:', room.isPlaying);
+    console.log('[Popup] Room users:', room.users);
 
     const formatTime = (seconds) => {
-      if (!seconds && seconds !== 0) return '--:--';
+      console.log('[Popup] Formatting time:', seconds, 'type:', typeof seconds);
+      if (seconds === null || seconds === undefined) {
+        console.log('[Popup] Time is null/undefined, returning --:--');
+        return '--:--';
+      }
       const totalSeconds = Math.floor(seconds);
       const minutes = Math.floor(totalSeconds / 60);
       const secs = totalSeconds % 60;
-      return `${minutes}:${secs.toString().padStart(2, '0')}`;
+      const formatted = `${minutes}:${secs.toString().padStart(2, '0')}`;
+      console.log('[Popup] Formatted time:', formatted);
+      return formatted;
     };
 
     // Update local time (use room's currentTime as reference)
     if (localTimeEl) {
-      localTimeEl.textContent = formatTime(room.currentTime);
+      const formattedTime = formatTime(room.currentTime);
+      console.log('[Popup] Setting localTimeEl.textContent to:', formattedTime);
+      localTimeEl.textContent = formattedTime;
+    } else {
+      console.log('[Popup] localTimeEl not found!');
     }
 
     // Update sync status
     if (syncStatusEl) {
       const isPlaying = room.isPlaying ? 'Playing' : 'Paused';
+      console.log('[Popup] Setting sync status to:', isPlaying);
       syncStatusEl.textContent = isPlaying;
       syncStatusEl.style.color = room.isPlaying ? '#4ade80' : '#fbbf24';
+    } else {
+      console.log('[Popup] syncStatusEl not found!');
     }
 
     // Update user list with individual positions

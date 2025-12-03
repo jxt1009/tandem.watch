@@ -355,9 +355,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     stateManager.safeSendMessage({ type: 'REQUEST_SYNC' });
   }
 
+  if (request.type === 'CONNECTION_STATUS') {
+    console.log('[Content Script] Connection status changed:', request.status);
+    uiManager.updateConnectionIndicator(request.status);
+  }
+
   if (request.type === 'RECONNECTED') {
     console.log('[Content Script] WebSocket reconnected, userId:', request.userId);
-    uiManager.updateConnectionIndicator(true);
   }
 
   if (request.type === 'REQUEST_SYNC_AFTER_RECONNECT') {

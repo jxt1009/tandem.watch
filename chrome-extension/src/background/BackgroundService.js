@@ -72,6 +72,7 @@ export class BackgroundService {
           tabs.forEach(tab => {
             chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId }).catch(() => {});
             chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_INITIAL_SYNC_AND_PLAY' }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'connected' }).catch(() => {});
           });
         });
         this.startHeartbeat();
@@ -87,6 +88,12 @@ export class BackgroundService {
       this.ws.onclose = () => {
         console.log('[BackgroundService] WebSocket closed');
         this.isConnected = false;
+        // Notify content scripts of disconnection
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'disconnected' }).catch(() => {});
+          });
+        });
         if (!this.intentionalDisconnect && this.roomId) {
           this.attemptReconnection();
         } else {
@@ -217,6 +224,14 @@ export class BackgroundService {
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
     console.log(`[BackgroundService] Attempting reconnection ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms...`);
+    
+    // Notify content scripts that we're reconnecting
+    chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'reconnecting' }).catch(() => {});
+      });
+    });
+    
     this.reconnectTimer = setTimeout(() => {
       this.reconnect();
     }, delay);
@@ -250,6 +265,11 @@ export class BackgroundService {
               roomId: this.roomId 
             }).catch(() => {});
             
+            chrome.tabs.sendMessage(tab.id, { 
+              type: 'CONNECTION_STATUS', 
+              status: 'connected' 
+            }).catch(() => {});
+            
             // Request sync after reconnection if on /watch page
             chrome.tabs.sendMessage(tab.id, { 
               type: 'REQUEST_SYNC_AFTER_RECONNECT' 
@@ -264,6 +284,12 @@ export class BackgroundService {
       this.ws.onclose = () => {
         console.log('[BackgroundService] Reconnected WebSocket closed');
         this.isConnected = false;
+        // Notify content scripts of disconnection
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'disconnected' }).catch(() => {});
+          });
+        });
         if (!this.intentionalDisconnect && this.roomId) {
           this.attemptReconnection();
         }
