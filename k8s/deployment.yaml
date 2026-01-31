@@ -7,7 +7,7 @@ metadata:
     app: signaling-server
     version: v2
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -22,19 +22,7 @@ spec:
         app: signaling-server
         version: v2
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: app
-                  operator: In
-                  values:
-                  - signaling-server
-              topologyKey: kubernetes.io/hostname
-      
+      # Single-node cluster, so skip anti-affinity
       containers:
       - name: signaling-server
         image: node:20-alpine

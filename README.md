@@ -125,12 +125,19 @@ tandem.watch/
 │   ├── db.js
 │   ├── logger.js
 │   └── docker-compose.yml
+├── k8s/                       # Kubernetes manifests
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── postgres.yaml
+│   ├── redis.yaml
+│   └── overlays/              # Environment configs
+├── docs/
+│   ├── QUICKSTART.md
+│   ├── ARCHITECTURE.md
+│   ├── DEPLOYMENT.md
+│   └── KUBERNETES_DEPLOYMENT.md
 ├── webpack.config.js
-├── package.json
-└── docs/
-    ├── QUICKSTART.md          # 30-second setup
-    ├── ARCHITECTURE.md        # System design
-    └── IMPLEMENTATION_GUIDE.md
+└── package.json
 ```
 
 ---
@@ -139,9 +146,10 @@ tandem.watch/
 
 | Document | Purpose |
 |----------|---------|
-| [QUICKSTART.md](QUICKSTART.md) | 30-second setup guide |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and module breakdown |
-| [IMPLEMENTATION_GUIDE.md](IMPLEMENTATION_GUIDE.md) | Technical deep-dive for developers |
+| [docs/QUICKSTART.md](docs/QUICKSTART.md) | 30-second setup guide |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and module breakdown |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment and production setup |
+| [docs/KUBERNETES_DEPLOYMENT.md](docs/KUBERNETES_DEPLOYMENT.md) | Kubernetes cluster deployment on Ubuntu |
 
 ---
 
@@ -256,4 +264,4 @@ Pull requests welcome! Please ensure:
 
 Your Netflix Party Sync extension is fully implemented and ready to deploy. Start the signaling server, load the extension in Chrome, and begin synchronized watching today!
 
-Questions? Check [QUICKSTART.md](QUICKSTART.md) for quick setup or [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.
+Questions? Check [docs/QUICKSTART.md](docs/QUICKSTART.md) for quick setup or [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical details. For Kubernetes deployment, see [docs/KUBERNETES_DEPLOYMENT.md](docs/KUBERNETES_DEPLOYMENT.md).
