@@ -1,328 +1,455 @@
 import http from 'http';
 import { WebSocketServer } from 'ws';
+import { v4 as uuidv4 } from 'uuid';
+import config from './config.js';
+import logger from './logger.js';
+import {
+  initializeRedis,
+  initializeDatabase,
+  closeConnections,
+  RoomRepository,
+  UserRepository,
+  EventRepository,
+  redis,
+} from './db.js';
 
-const PORT = process.env.PORT || 4001;
-const HOST = '0.0.0.0';
+// ============= STATE =============
+const wsConnections = new Map(); // WebSocket -> { userId, roomId, peerId }
+const localRoomSubscribers = new Map(); // roomId -> Set of subscribed WebSockets
 
-// Simple HTTP server with status endpoint
+// ============= PUBSUB SETUP =============
+
+async function subscribeToRoom(roomId, callback) {
+  try {
+    const pubsub = config.keys.pubsub(roomId);
+    
+    // Subscribe on the subscriber connection
+    await redis.subscriber.subscribe(pubsub, (message) => {
+      try {
+        const data = JSON.parse(message);
+        callback(data);
+      } catch (err) {
+        logger.error({ err, message }, 'Failed to parse pubsub message');
+      }
+    });
+    
+    logger.debug({ roomId }, 'Subscribed to room channel');
+  } catch (err) {
+    logger.error({ err, roomId }, 'Failed to subscribe to room');
+  }
+}
+
+async function publishToRoom(roomId, message) {
+  try {
+    const pubsub = config.keys.pubsub(roomId);
+    await redis.client.publish(pubsub, JSON.stringify(message));
+  } catch (err) {
+    logger.error({ err, roomId }, 'Failed to publish to room');
+  }
+}
+
+// ============= HTTP SERVER =============
+
 const server = http.createServer((req, res) => {
-  // Add CORS headers for all requests
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
+
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
     return;
   }
-  
+
   if (req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     const status = {
-      activeRooms: rooms.size,
-      activeUsers: userStates.size,
-      rooms: Array.from(roomState.entries()).map(([roomId, state]) => ({
-        roomId,
-        userCount: rooms.get(roomId)?.size || 0,
-        hostUserId: state.hostUserId,
-        currentUrl: state.currentUrl,
-        currentTime: state.currentTime,
-        isPlaying: state.isPlaying,
-        lastUpdate: new Date(state.lastUpdate).toISOString(),
-        users: state.users ? Array.from(state.users.entries()).map(([userId, userData]) => ({
-          userId,
-          currentTime: userData.currentTime,
-          isPlaying: userData.isPlaying,
-          lastUpdate: new Date(userData.lastUpdate).toISOString()
-        })) : []
-      }))
+      nodeId: config.nodeId,
+      timestamp: new Date().toISOString(),
+      localConnections: wsConnections.size,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
     };
     res.end(JSON.stringify(status, null, 2));
-  } else {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Signaling server is running\nVisit /status for server info');
+    return;
   }
+
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', nodeId: config.nodeId }));
+    return;
+  }
+
+  if (req.url === '/metrics') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const metrics = {
+      nodeId: config.nodeId,
+      localConnections: wsConnections.size,
+      localRooms: localRoomSubscribers.size,
+      memory: process.memoryUsage(),
+      uptime: process.uptime(),
+    };
+    res.end(JSON.stringify(metrics, null, 2));
+    return;
+  }
+
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end(`Signaling server running (${config.nodeId})\nEndpoints: /status, /health, /metrics`);
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-server.listen(PORT, HOST, () => {
-  console.log(`Signaling server listening on ${HOST}:${PORT}`);
+server.listen(config.port, config.host, () => {
+  logger.info({ port: config.port, host: config.host, nodeId: config.nodeId }, 'Server listening');
 });
 
-// Track rooms and users with enhanced state
-const rooms = new Map(); // roomId -> Set of WebSocket clients
-const userRooms = new Map(); // WebSocket -> { userId, roomId }
-const roomState = new Map(); // roomId -> { hostUserId, currentUrl, currentTime, isPlaying, lastUpdate, users: Map }
-const userStates = new Map(); // userId -> { ws, lastHeartbeat, connectionQuality, currentTime, isPlaying }
-
-function broadcastToRoom(sender, roomId, message) {
-  if (!rooms.has(roomId)) return;
-  
-  const clients = rooms.get(roomId);
-  clients.forEach((client) => {
-    if (client !== sender && client.readyState === client.OPEN) {
-      client.send(message);
-    }
-  });
-}
-
-function addUserToRoom(ws, userId, roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, new Set());
-    // First user becomes the host
-    roomState.set(roomId, {
-      hostUserId: userId,
-      currentUrl: null,
-      currentTime: 0,
-      isPlaying: false,
-      lastUpdate: Date.now(),
-      users: new Map() // userId -> { currentTime, isPlaying, lastUpdate }
-    });
-  }
-  rooms.get(roomId).add(ws);
-  userRooms.set(ws, { userId, roomId });
-  userStates.set(userId, { 
-    ws, 
-    lastHeartbeat: Date.now(),
-    connectionQuality: 'good',
-    currentTime: 0,
-    isPlaying: false
-  });
-  
-  // Add user to room's user list and send room state to new user
-  const roomData = roomState.get(roomId);
-  if (roomData) {
-    roomData.users.set(userId, {
-      currentTime: 0,
-      isPlaying: false,
-      lastUpdate: Date.now()
-    });
-    
-    // Send room state to new user
-    if (roomData.currentUrl) {
-      ws.send(JSON.stringify({
-        type: 'ROOM_STATE',
-        url: roomData.currentUrl,
-        currentTime: roomData.currentTime,
-        isPlaying: roomData.isPlaying,
-        hostUserId: roomData.hostUserId
-      }));
-    }
-  }
-}
-
-function removeUserFromRoom(ws) {
-  if (userRooms.has(ws)) {
-    const { userId, roomId } = userRooms.get(ws);
-    userStates.delete(userId);
-    
-    if (rooms.has(roomId)) {
-      rooms.get(roomId).delete(ws);
-      
-      // Remove user from room's user list
-      const roomData = roomState.get(roomId);
-      if (roomData && roomData.users) {
-        roomData.users.delete(userId);
-      }
-      
-      // If room is empty, clean up
-      if (rooms.get(roomId).size === 0) {
-        rooms.delete(roomId);
-        roomState.delete(roomId);
-        console.log(`Room ${roomId} is now empty and removed`);
-      } else {
-        // If host left, assign new host
-        if (roomData && roomData.hostUserId === userId) {
-          const remainingClients = Array.from(rooms.get(roomId));
-          if (remainingClients.length > 0) {
-            const newHostUserRoom = userRooms.get(remainingClients[0]);
-            if (newHostUserRoom) {
-              roomData.hostUserId = newHostUserRoom.userId;
-              console.log(`New host for room ${roomId}: ${roomData.hostUserId}`);
-              
-              // Notify room of new host
-              broadcastToRoom(null, roomId, JSON.stringify({
-                type: 'HOST_CHANGED',
-                newHostUserId: roomData.hostUserId
-              }));
-            }
-          }
-        }
-      }
-    }
-    userRooms.delete(ws);
-  }
-}
-
-// Periodic health check and state sync
-setInterval(() => {
-  const now = Date.now();
-  const timeout = 60000; // 60 seconds
-
-  // Check for stale connections
-  userStates.forEach((state, userId) => {
-    if (now - state.lastHeartbeat > timeout) {
-      console.log(`User ${userId} appears disconnected (no heartbeat for ${timeout}ms)`);
-      state.connectionQuality = 'poor';
-      
-      // Force close stale connection
-      if (state.ws && state.ws.readyState === state.ws.OPEN) {
-        state.ws.close();
-      }
-    }
-  });
-
-  // Log room stats
-  console.log(`Active rooms: ${rooms.size}, Active users: ${userStates.size}`);
-}, 30000); // Check every 30 seconds
+// ============= WEBSOCKET HANDLERS =============
 
 wss.on('connection', (ws, req) => {
-  const remote = req?.socket?.remoteAddress || 'unknown';
-  console.log('Client connected', remote);
+  const clientIp = req.socket.remoteAddress;
+  let userId = null;
+  let roomId = null;
+  let peerId = uuidv4();
 
-  ws.on('message', (msg) => {
-    const text = msg.toString();
+  logger.debug({ clientIp, peerId }, 'Client connected');
+
+  ws.on('message', async (msg) => {
     try {
-      const parsed = JSON.parse(text);
-      const { type, roomId, userId } = parsed;
+      const data = JSON.parse(msg.toString());
+      const type = data.type;
 
-      // Handle PING/PONG for connection health monitoring
-      if (type === 'PING') {
-        if (userId && userStates.has(userId)) {
-          userStates.get(userId).lastHeartbeat = Date.now();
+      // ===== JOIN =====
+      if (type === 'JOIN') {
+        roomId = data.roomId;
+        userId = data.userId;
+
+        if (!roomId || !userId) {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'Missing roomId or userId' }));
+          return;
         }
+
+        // Create room if needed
+        let room = await RoomRepository.getById(roomId);
+        if (!room) {
+          room = await RoomRepository.create(roomId, userId);
+        }
+
+        // Create user
+        await UserRepository.create(userId, roomId);
+
+        // Store connection
+        wsConnections.set(ws, { userId, roomId, peerId });
+
+        // Subscribe to room on first connection
+        if (!localRoomSubscribers.has(roomId)) {
+          localRoomSubscribers.set(roomId, new Set());
+
+          // Subscribe to Redis pubsub for this room
+          await subscribeToRoom(roomId, (message) => {
+            broadcastToRoom(roomId, message);
+          });
+        }
+
+        localRoomSubscribers.get(roomId).add(ws);
+
+        // Log event
+        await EventRepository.log(roomId, 'USER_JOINED', userId, { peerId });
+
+        // Send room state to joining user
+        ws.send(JSON.stringify({
+          type: 'ROOM_STATE',
+          roomId,
+          url: room.currentUrl,
+          currentTime: room.currentTime,
+          isPlaying: room.isPlaying,
+          hostUserId: room.hostUserId,
+          nodeId: config.nodeId,
+        }));
+
+        // Broadcast join to others in room
+        broadcastToRoom(roomId, {
+          type: 'USER_JOINED',
+          userId,
+          peerId,
+          timestamp: Date.now(),
+        }, ws);
+
+        logger.debug({ userId, roomId, peerId }, 'User joined room');
+      }
+
+      // ===== HEARTBEAT (PING/PONG) =====
+      else if (type === 'PING') {
         ws.send(JSON.stringify({ type: 'PONG', timestamp: Date.now() }));
-        return;
-      }
-
-      // Server-side sync state tracking
-      if (type === 'URL_CHANGE' && roomId) {
-        const state = roomState.get(roomId);
-        if (state) {
-          state.currentUrl = parsed.url;
-          state.lastUpdate = Date.now();
-          console.log(`Room ${roomId} URL updated: ${parsed.url}`);
+        if (userId) {
+          await UserRepository.update(userId, { lastHeartbeat: new Date() });
         }
       }
 
-      if (type === 'PLAY_PAUSE' && roomId) {
-        const state = roomState.get(roomId);
-        if (state) {
-          state.isPlaying = parsed.control === 'play';
-          if (parsed.currentTime !== undefined) {
-            state.currentTime = parsed.currentTime;
-          }
-          state.lastUpdate = Date.now();
-          
-          // Update per-user state
-          if (userId && state.users && state.users.has(userId)) {
-            state.users.get(userId).isPlaying = state.isPlaying;
-            if (parsed.currentTime !== undefined) {
-              state.users.get(userId).currentTime = parsed.currentTime;
-            }
-            state.users.get(userId).lastUpdate = Date.now();
-          }
-          
-          console.log(`Room ${roomId} playback: ${state.isPlaying ? 'playing' : 'paused'} at ${state.currentTime}s`);
+      // ===== PLAYBACK SYNC =====
+      else if (type === 'PLAY_PAUSE') {
+        if (!roomId) return;
+
+        const control = data.control === 'play';
+        const currentTime = data.currentTime || 0;
+
+        await RoomRepository.update(roomId, {
+          isPlaying: control,
+          currentTime,
+        });
+
+        if (userId) {
+          await UserRepository.update(userId, {
+            isPlaying: control,
+            currentTime,
+          });
         }
+
+        await EventRepository.log(roomId, 'PLAY_PAUSE', userId, { control, currentTime });
+
+        broadcastToRoom(roomId, {
+          type: 'PLAY_PAUSE',
+          userId,
+          control,
+          currentTime,
+          timestamp: Date.now(),
+        });
       }
 
-      if (type === 'SEEK' && roomId) {
-        const state = roomState.get(roomId);
-        if (state && parsed.currentTime !== undefined) {
-          state.currentTime = parsed.currentTime;
-          state.isPlaying = parsed.isPlaying;
-          state.lastUpdate = Date.now();
-          
-          // Update per-user state
-          if (userId && state.users && state.users.has(userId)) {
-            state.users.get(userId).currentTime = parsed.currentTime;
-            state.users.get(userId).isPlaying = parsed.isPlaying;
-            state.users.get(userId).lastUpdate = Date.now();
-          }
-          
-          console.log(`Room ${roomId} seeked to ${state.currentTime}s`);
+      else if (type === 'SEEK') {
+        if (!roomId) return;
+
+        const currentTime = data.currentTime || 0;
+        const isPlaying = data.isPlaying || false;
+
+        await RoomRepository.update(roomId, { currentTime, isPlaying });
+        if (userId) {
+          await UserRepository.update(userId, { currentTime, isPlaying });
         }
+
+        await EventRepository.log(roomId, 'SEEK', userId, { currentTime });
+
+        broadcastToRoom(roomId, {
+          type: 'SEEK',
+          userId,
+          currentTime,
+          isPlaying,
+          timestamp: Date.now(),
+        });
       }
 
-      // Handle position updates (client reporting their position without broadcasting)
-      if (type === 'POSITION_UPDATE' && roomId && userId) {
-        const state = roomState.get(roomId);
-        if (state && state.users && state.users.has(userId)) {
-          state.users.get(userId).currentTime = parsed.currentTime || 0;
-          state.users.get(userId).isPlaying = parsed.isPlaying || false;
-          state.users.get(userId).lastUpdate = Date.now();
-          console.log(`User ${userId} position updated: ${parsed.currentTime}s ${parsed.isPlaying ? 'playing' : 'paused'}`);
-        }
-        return; // Don't broadcast this
+      else if (type === 'POSITION_UPDATE') {
+        if (!roomId || !userId) return;
+
+        const currentTime = data.currentTime || 0;
+        const isPlaying = data.isPlaying || false;
+
+        await UserRepository.update(userId, { currentTime, isPlaying });
+        // Don't broadcast position updates, just track them
       }
 
-      // Handle sync requests with server-side state
-      if (type === 'REQUEST_SYNC' && roomId) {
-        const state = roomState.get(roomId);
-        if (state && state.currentUrl) {
-          // Server responds directly with known state
-          ws.send(JSON.stringify({
-            type: 'SYNC_RESPONSE',
-            fromUserId: 'server',
-            currentTime: state.currentTime,
-            isPlaying: state.isPlaying,
-            url: state.currentUrl,
-            to: userId
+      // ===== URL CHANGES =====
+      else if (type === 'URL_CHANGE') {
+        if (!roomId) return;
+
+        const url = data.url;
+        await RoomRepository.update(roomId, { currentUrl: url });
+        await EventRepository.log(roomId, 'URL_CHANGE', userId, { url });
+
+        broadcastToRoom(roomId, {
+          type: 'URL_CHANGE',
+          userId,
+          url,
+          timestamp: Date.now(),
+        });
+      }
+
+      // ===== SYNC REQUESTS =====
+      else if (type === 'REQUEST_SYNC') {
+        if (!roomId) return;
+
+        const room = await RoomRepository.getById(roomId);
+        ws.send(JSON.stringify({
+          type: 'SYNC_RESPONSE',
+          fromUserId: 'server',
+          currentTime: room.currentTime,
+          isPlaying: room.isPlaying,
+          url: room.currentUrl,
+          timestamp: Date.now(),
+        }));
+      }
+
+      // ===== WEBRTC SIGNALING (pass-through) =====
+      else if (['OFFER', 'ANSWER', 'ICE_CANDIDATE'].includes(type)) {
+        if (!roomId || !data.to) return;
+
+        // Send directly to target user
+        const targetWs = Array.from(wsConnections.entries()).find(
+          ([, info]) => info.userId === data.to && info.roomId === roomId
+        )?.[0];
+
+        if (targetWs && targetWs.readyState === 1) {
+          targetWs.send(JSON.stringify({
+            ...data,
+            from: userId,
+            nodeId: config.nodeId,
           }));
-          console.log(`Server provided sync state to ${userId}: ${state.currentTime}s ${state.isPlaying ? 'playing' : 'paused'}`);
-          return; // Don't broadcast, server handled it
+        } else {
+          logger.warn({ from: userId, to: data.to, roomId }, 'Target user not found');
         }
       }
 
-      if (type === 'JOIN' && roomId && userId) {
-        addUserToRoom(ws, userId, roomId);
-        console.log(`User ${userId} joined room ${roomId}`);
-        // Broadcast to room
-        broadcastToRoom(ws, roomId, text);
-      } else if (type === 'LEAVE' && roomId) {
-        console.log(`User left room ${roomId}`);
-        broadcastToRoom(ws, roomId, text);
-        removeUserFromRoom(ws);
-      } else if (roomId) {
-        // Check if this is a targeted message (has 'to' field)
-        const targetUserId = parsed.to;
-        if (targetUserId) {
-          // Send only to the specific target user
-          const targetState = userStates.get(targetUserId);
-          if (targetState && targetState.ws && targetState.ws.readyState === targetState.ws.OPEN) {
-            targetState.ws.send(text);
-            // console.log(`Sent ${type} from ${userId} to ${targetUserId}`);
-          } else {
-            console.warn(`Cannot send ${type} to ${targetUserId} - user not found or not connected`);
-          }
-        } else {
-          // Broadcast to room for non-targeted messages
-          broadcastToRoom(ws, roomId, text);
-        }
-      } else {
-        // Fallback: broadcast to all (legacy)
-        wss.clients.forEach((client) => {
-          if (client !== ws && client.readyState === client.OPEN) {
-            client.send(text);
-          }
+      // ===== BROADCAST (fallback) =====
+      else if (roomId && type !== 'LEAVE') {
+        broadcastToRoom(roomId, {
+          ...data,
+          userId,
+          nodeId: config.nodeId,
+          timestamp: Date.now(),
         });
       }
     } catch (err) {
-      console.error('Error parsing message:', err);
+      logger.error({ err, message: msg.toString() }, 'Error processing message');
+      ws.send(JSON.stringify({ type: 'ERROR', message: 'Processing error' }));
     }
   });
 
-  ws.on('close', () => {
-    removeUserFromRoom(ws);
-    console.log('Client disconnected', remote);
+  ws.on('close', async () => {
+    if (userId && roomId) {
+      logger.debug({ userId, roomId, peerId }, 'User disconnected');
+
+      // Update user state
+      await UserRepository.delete(userId);
+
+      // Check if room is empty
+      const users = await UserRepository.getRoomUsers(roomId);
+      if (users.length === 0) {
+        await RoomRepository.delete(roomId);
+        localRoomSubscribers.delete(roomId);
+        logger.debug({ roomId }, 'Room cleaned up (empty)');
+      }
+
+      // Broadcast disconnect
+      broadcastToRoom(roomId, {
+        type: 'USER_LEFT',
+        userId,
+        peerId,
+        timestamp: Date.now(),
+      });
+
+      await EventRepository.log(roomId, 'USER_LEFT', userId, { peerId });
+    }
+
+    // Remove from local registry
+    localRoomSubscribers.get(roomId)?.delete(ws);
+    wsConnections.delete(ws);
+  });
+
+  ws.on('error', (err) => {
+    logger.error({ err, userId, roomId }, 'WebSocket error');
   });
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('Shutting down signaling server');
-  wss.close(() => server.close(() => process.exit(0)));
-});
+// ============= BROADCAST HELPERS =============
+
+function broadcastToRoom(roomId, message, excludeWs = null) {
+  const clients = localRoomSubscribers.get(roomId);
+  if (!clients) return;
+
+  const msg = JSON.stringify(message);
+  clients.forEach((ws) => {
+    if (ws !== excludeWs && ws.readyState === 1) {
+      ws.send(msg);
+    }
+  });
+}
+
+// ============= PERIODIC CLEANUP =====
+
+setInterval(async () => {
+  try {
+    const rooms = await RoomRepository.getActive();
+    const now = Date.now();
+
+    for (const room of rooms) {
+      const users = await UserRepository.getRoomUsers(room.id);
+      
+      // Remove stale users (no heartbeat for 2x timeout)
+      for (const user of users) {
+        const staleness = now - new Date(user.lastHeartbeat).getTime();
+        if (staleness > config.heartbeatTimeout * 2) {
+          logger.debug({ userId: user.id, roomId: room.id }, 'Removing stale user');
+          await UserRepository.delete(user.id);
+        }
+      }
+
+      // Clean up empty rooms
+      const updatedUsers = await UserRepository.getRoomUsers(room.id);
+      if (updatedUsers.length === 0) {
+        await RoomRepository.delete(room.id);
+        localRoomSubscribers.delete(room.id);
+        logger.debug({ roomId: room.id }, 'Cleaned up empty room');
+      }
+    }
+
+    logger.debug(
+      { activeRooms: rooms.length, nodeId: config.nodeId },
+      'Periodic cleanup completed'
+    );
+  } catch (err) {
+    logger.error({ err }, 'Periodic cleanup failed');
+  }
+}, config.roomCleanupInterval);
+
+// ============= GRACEFUL SHUTDOWN =============
+
+async function shutdown(signal) {
+  logger.info({ signal }, 'Shutdown signal received');
+
+  // Stop accepting new connections
+  wss.close(() => {
+    logger.info('WebSocket server closed');
+  });
+
+  // Close all existing connections
+  wss.clients.forEach((ws) => {
+    ws.close(1000, 'Server shutting down');
+  });
+
+  // Wait a bit then close HTTP server
+  setTimeout(async () => {
+    server.close(async () => {
+      logger.info('HTTP server closed');
+      await closeConnections();
+      process.exit(0);
+    });
+  }, 5000);
+
+  // Force exit after 15 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 15000);
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// ============= INITIALIZATION =============
+
+async function start() {
+  try {
+    logger.info({ nodeId: config.nodeId }, 'Starting signaling server');
+
+    await initializeRedis();
+    await initializeDatabase();
+
+    logger.info('Server initialized successfully');
+  } catch (err) {
+    logger.error({ err }, 'Failed to initialize server');
+    process.exit(1);
+  }
+}
+
+start();
+
+export default server;

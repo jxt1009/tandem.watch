@@ -3,7 +3,7 @@
 
 (function() {
   // Netflix Player API Helper - runs in page context
-  window.__toperparty_netflix = {
+  window.__tandem_netflix = {
     getPlayer: function() {
       try {
         const videoPlayer = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
@@ -56,11 +56,11 @@
   };
   
   // Listen for commands from content script
-  document.addEventListener('__toperparty_command', function(e) {
+  document.addEventListener('__tandem_command', function(e) {
     const { command, args } = e.detail;
-    if (window.__toperparty_netflix[command]) {
-      const result = window.__toperparty_netflix[command].apply(window.__toperparty_netflix, args || []);
-      document.dispatchEvent(new CustomEvent('__toperparty_response', { detail: { command, result } }));
+    if (window.__tandem_netflix[command]) {
+      const result = window.__tandem_netflix[command].apply(window.__tandem_netflix, args || []);
+      document.dispatchEvent(new CustomEvent('__tandem_response', { detail: { command, result } }));
     }
   });
 })();

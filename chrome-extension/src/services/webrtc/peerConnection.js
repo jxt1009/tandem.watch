@@ -48,13 +48,13 @@ export function createPeerConnectionFactory({ stateManager, sendSignal, remoteSt
       
       // Check if video element exists
       const hasVideoInMap = remoteVideos.has(peerId);
-      const hasVideoInDom = !!document.getElementById('toperparty-remote-' + peerId);
+      const hasVideoInDom = !!document.getElementById('tandem-remote-' + peerId);
       const videoExists = hasVideoInMap || hasVideoInDom;
       
       if (videoExists) {
         console.log('[PeerConnection] Video already exists for peer:', peerId, 'inMap:', hasVideoInMap, 'inDom:', hasVideoInDom);
         // Update the existing video element's stream if it's different
-        const existingVideo = remoteVideos.get(peerId) || document.getElementById('toperparty-remote-' + peerId);
+        const existingVideo = remoteVideos.get(peerId) || document.getElementById('tandem-remote-' + peerId);
         if (existingVideo && existingVideo.srcObject !== stream) {
           console.log('[PeerConnection] Updating existing video element with new stream');
           existingVideo.srcObject = stream;

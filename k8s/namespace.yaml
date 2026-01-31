@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tandem-watch
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tandem-watch-quota
+  namespace: tandem-watch
+spec:
+  hard:
+    requests.cpu: "5"
+    requests.memory: "10Gi"
+    limits.cpu: "10"
+    limits.memory: "20Gi"
+    pods: "50"
+---
+apiVersion: v1
+kind: NetworkPolicy
+metadata:
+  name: tandem-watch-network-policy
+  namespace: tandem-watch
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: tandem-watch
+    - podSelector: {}
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: tandem-watch
+    - podSelector: {}
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53

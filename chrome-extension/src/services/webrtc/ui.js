@@ -2,14 +2,14 @@ export function createRemoteVideoManager(remoteVideos) {
   function createLoadingSpinner() {
     // Create a more visually appealing spinner using CSS
     const spinner = document.createElement('div');
-    spinner.className = 'toperparty-spinner';
+    spinner.className = 'tandem-spinner';
     spinner.style.cssText = `
       width: 40px;
       height: 40px;
       border: 4px solid rgba(255, 255, 255, 0.3);
       border-top: 4px solid #00aaff;
       border-radius: 50%;
-      animation: toperparty-spin 1s linear infinite;
+      animation: tandem-spin 1s linear infinite;
       margin-bottom: 12px;
     `;
     return spinner;
@@ -71,7 +71,7 @@ export function createRemoteVideoManager(remoteVideos) {
     console.log('[RemoteVideoManager] Current remoteVideos map size:', remoteVideos.size, 'peers:', Array.from(remoteVideos.keys()));
     
     // Check if video already exists in DOM (double-check for race conditions)
-    const existingInDom = document.getElementById('toperparty-remote-' + peerId);
+    const existingInDom = document.getElementById('tandem-remote-' + peerId);
     if (existingInDom) {
       console.log('[RemoteVideoManager] Video already exists in DOM for peer:', peerId, 'skipping duplicate creation');
       // Update stream on existing element if different
@@ -79,7 +79,7 @@ export function createRemoteVideoManager(remoteVideos) {
         console.log('[RemoteVideoManager] Updating stream on existing video element');
         existingInDom.srcObject = stream;
         // Remove loading overlay if it exists
-        const overlay = document.getElementById('toperparty-overlay-' + peerId);
+        const overlay = document.getElementById('tandem-overlay-' + peerId);
         if (overlay) overlay.remove();
       }
       // Make sure it's tracked
@@ -90,7 +90,7 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     // Check if a placeholder container already exists
-    let container = document.getElementById('toperparty-container-' + peerId);
+    let container = document.getElementById('tandem-container-' + peerId);
     
     if (!container) {
       // No placeholder exists, create container from scratch
@@ -98,7 +98,7 @@ export function createRemoteVideoManager(remoteVideos) {
       remove(peerId);
       
       container = document.createElement('div');
-      container.id = 'toperparty-container-' + peerId;
+      container.id = 'tandem-container-' + peerId;
       container.style.position = 'fixed';
       container.style.bottom = '145px';
       container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
@@ -113,7 +113,7 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     const v = document.createElement('video');
-    v.id = 'toperparty-remote-' + peerId;
+    v.id = 'tandem-remote-' + peerId;
     v.autoplay = true;
     v.playsInline = true;
     v.muted = true;
@@ -124,10 +124,10 @@ export function createRemoteVideoManager(remoteVideos) {
     v.style.backgroundColor = '#000';
     
     // Get or create overlay
-    let overlay = document.getElementById('toperparty-overlay-' + peerId);
+    let overlay = document.getElementById('tandem-overlay-' + peerId);
     if (!overlay) {
       overlay = document.createElement('div');
-      overlay.id = 'toperparty-overlay-' + peerId;
+      overlay.id = 'tandem-overlay-' + peerId;
       overlay.style.position = 'absolute';
       overlay.style.top = '0';
       overlay.style.left = '0';
@@ -154,15 +154,15 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     // Add spinner animation styles (only once)
-    if (!document.getElementById('toperparty-spinner-styles')) {
+    if (!document.getElementById('tandem-spinner-styles')) {
       const style = document.createElement('style');
-      style.id = 'toperparty-spinner-styles';
+      style.id = 'tandem-spinner-styles';
       style.textContent = `
-        @keyframes toperparty-spin {
+        @keyframes tandem-spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        @keyframes toperparty-pulse {
+        @keyframes tandem-pulse {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 1; }
         }
@@ -254,7 +254,7 @@ export function createRemoteVideoManager(remoteVideos) {
       }
       // Remove the container (which includes the video)
       const container = v.parentElement;
-      if (container && container.id === 'toperparty-container-' + peerId) {
+      if (container && container.id === 'tandem-container-' + peerId) {
         container.remove();
       } else {
         v.remove();
@@ -263,13 +263,13 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     // Also check DOM for any orphaned elements (extra safety)
-    const domContainer = document.getElementById('toperparty-container-' + peerId);
+    const domContainer = document.getElementById('tandem-container-' + peerId);
     if (domContainer) {
       console.log('[RemoteVideoManager] Found orphaned container, removing');
       domContainer.remove();
     }
     
-    const domElement = document.getElementById('toperparty-remote-' + peerId);
+    const domElement = document.getElementById('tandem-remote-' + peerId);
     if (domElement && domElement !== v) {
       console.log('[RemoteVideoManager] Found orphaned video element, removing');
       try {
@@ -281,7 +281,7 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     // Clean up overlay if it exists
-    const overlay = document.getElementById('toperparty-overlay-' + peerId);
+    const overlay = document.getElementById('tandem-overlay-' + peerId);
     if (overlay) {
       overlay.remove();
     }
@@ -291,7 +291,7 @@ export function createRemoteVideoManager(remoteVideos) {
     console.log('[RemoteVideoManager] Showing reconnecting overlay for peer:', peerId);
     
     // Check if overlay already exists
-    let overlay = document.getElementById('toperparty-overlay-' + peerId);
+    let overlay = document.getElementById('tandem-overlay-' + peerId);
     if (overlay) {
       // Update existing overlay content
       overlay.innerHTML = '';
@@ -306,14 +306,14 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     // Create new overlay if it doesn't exist
-    const container = document.getElementById('toperparty-container-' + peerId);
+    const container = document.getElementById('tandem-container-' + peerId);
     if (!container) {
       console.warn('[RemoteVideoManager] Cannot show reconnecting - container not found');
       return;
     }
     
     overlay = document.createElement('div');
-    overlay.id = 'toperparty-overlay-' + peerId;
+    overlay.id = 'tandem-overlay-' + peerId;
     overlay.style.position = 'absolute';
     overlay.style.top = '0';
     overlay.style.left = '0';
@@ -341,7 +341,7 @@ export function createRemoteVideoManager(remoteVideos) {
   }
   
   function hideOverlay(peerId) {
-    const overlay = document.getElementById('toperparty-overlay-' + peerId);
+    const overlay = document.getElementById('tandem-overlay-' + peerId);
     if (overlay) {
       console.log('[RemoteVideoManager] Hiding overlay for peer:', peerId);
       overlay.remove();
@@ -354,7 +354,7 @@ export function createRemoteVideoManager(remoteVideos) {
     
     console.log('[RemoteVideoManager] Showing waiting indicator');
     const container = document.createElement('div');
-    container.id = 'toperparty-waiting-indicator';
+    container.id = 'tandem-waiting-indicator';
     container.style.position = 'fixed';
     container.style.bottom = '145px';
     container.style.right = '20px';
@@ -385,7 +385,7 @@ export function createRemoteVideoManager(remoteVideos) {
   }
   
   function hideWaitingIndicator() {
-    const indicator = document.getElementById('toperparty-waiting-indicator');
+    const indicator = document.getElementById('tandem-waiting-indicator');
     if (indicator) {
       console.log('[RemoteVideoManager] Hiding waiting indicator');
       indicator.remove();
@@ -399,7 +399,7 @@ export function createRemoteVideoManager(remoteVideos) {
     hideWaitingIndicator();
     
     // Check if container already exists
-    let container = document.getElementById('toperparty-container-' + peerId);
+    let container = document.getElementById('tandem-container-' + peerId);
     if (container) {
       console.log('[RemoteVideoManager] Placeholder already exists for peer:', peerId, '- reusing it');
       return;
@@ -409,7 +409,7 @@ export function createRemoteVideoManager(remoteVideos) {
     
     // Create container immediately
     container = document.createElement('div');
-    container.id = 'toperparty-container-' + peerId;
+    container.id = 'tandem-container-' + peerId;
     container.style.position = 'fixed';
     container.style.bottom = '145px';
     container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
@@ -422,7 +422,7 @@ export function createRemoteVideoManager(remoteVideos) {
     
     // Create loading overlay
     const overlay = document.createElement('div');
-    overlay.id = 'toperparty-overlay-' + peerId;
+    overlay.id = 'tandem-overlay-' + peerId;
     overlay.style.position = 'absolute';
     overlay.style.top = '0';
     overlay.style.left = '0';

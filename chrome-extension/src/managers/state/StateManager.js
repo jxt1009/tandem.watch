@@ -10,14 +10,14 @@ export class StateManager {
     this.userId = userId;
     this.roomId = roomId;
     // Set flag so videos persist across navigation
-    sessionStorage.setItem('toperparty_was_active', 'true');
+    sessionStorage.setItem('tandem_was_active', 'true');
   }
   stopParty() {
     this.partyActive = false;
     this.userId = null;
     this.roomId = null;
     // Clear flag so videos are cleaned up
-    sessionStorage.removeItem('toperparty_was_active');
+    sessionStorage.removeItem('tandem_was_active');
   }
   isActive() { return this.partyActive; }
   getUserId() { return this.userId; }
@@ -34,11 +34,11 @@ export class StateManager {
     if (!this.isExtensionContextValid()) {
       console.warn('[StateManager] Extension context invalid - page needs reload after extension update');
       // Show user notification that they need to reload
-      if (!document.getElementById('toperparty-reload-notice')) {
+      if (!document.getElementById('tandem-reload-notice')) {
         const notice = document.createElement('div');
-        notice.id = 'toperparty-reload-notice';
+        notice.id = 'tandem-reload-notice';
         notice.style.cssText = 'position:fixed;top:20px;right:20px;background:#e50914;color:white;padding:15px;border-radius:8px;z-index:99999;font-family:Arial;box-shadow:0 4px 6px rgba(0,0,0,0.3);';
-        notice.innerHTML = '<strong>ToperParty:</strong> Extension updated. Please reload this page.';
+        notice.innerHTML = '<strong>tandem.watch:</strong> Extension updated. Please reload this page.';
         document.body.appendChild(notice);
       }
       return;

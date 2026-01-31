@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signaling-server
+  namespace: tandem-watch
+  labels:
+    app: signaling-server
+    version: v2
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: signaling-server
+  template:
+    metadata:
+      labels:
+        app: signaling-server
+        version: v2
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - signaling-server
+              topologyKey: kubernetes.io/hostname
+      
+      containers:
+      - name: signaling-server
+        image: node:20-alpine
+        imagePullPolicy: IfNotPresent
+        workingDir: /app
+        command:
+        - sh
+        - -c
+        - npm install && npm start
+        ports:
+        - name: ws
+          containerPort: 4001
+          protocol: TCP
+        
+        envFrom:
+        - configMapRef:
+            name: signaling-server-config
+        - secretRef:
+            name: signaling-server-secret
+        
+        env:
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 4001
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 4001
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sh
+              - -c
+              - sleep 15
+        
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      
+      volumes:
+      - name: app
+        configMap:
+          name: signaling-server-code
+          defaultMode: 0755
+  
+  minReadySeconds: 10

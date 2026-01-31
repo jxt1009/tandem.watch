@@ -165,7 +165,7 @@ export class WebRTCManager {
       } catch (e) {}
       
       // Remove the container (which includes the video)
-      const container = document.getElementById('toperparty-container-' + peerId);
+      const container = document.getElementById('tandem-container-' + peerId);
       if (container) {
         console.log('[WebRTCManager] Removing container for peer:', peerId);
         container.remove();
@@ -181,16 +181,16 @@ export class WebRTCManager {
     this.remoteVideos.clear();
     this.remoteStreams.clear();
     
-    // Extra cleanup: remove any orphaned toperparty elements
-    document.querySelectorAll('[id^="toperparty-container-"]').forEach(el => {
+    // Extra cleanup: remove any orphaned tandem elements
+    document.querySelectorAll('[id^="tandem-container-"]').forEach(el => {
       console.log('[WebRTCManager] Removing orphaned container:', el.id);
       el.remove();
     });
-    document.querySelectorAll('[id^="toperparty-remote-"]').forEach(el => {
+    document.querySelectorAll('[id^="tandem-remote-"]').forEach(el => {
       console.log('[WebRTCManager] Removing orphaned video:', el.id);
       el.remove();
     });
-    document.querySelectorAll('[id^="toperparty-overlay-"]').forEach(el => {
+    document.querySelectorAll('[id^="tandem-overlay-"]').forEach(el => {
       console.log('[WebRTCManager] Removing orphaned overlay:', el.id);
       el.remove();
     });

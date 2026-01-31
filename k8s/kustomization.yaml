@@ -1,0 +1,65 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: tandem-watch
+
+commonLabels:
+  app: tandem-watch
+  version: v2.0.0
+
+commonAnnotations:
+  managed-by: "kustomize"
+  project: "tandem-watch"
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - redis.yaml
+  - postgres.yaml
+  - deployment.yaml
+  - service.yaml
+
+# Replace image tags and resource names
+images:
+  - name: signaling-server
+    newName: signaling-server
+    newTag: v2.0.0
+  - name: redis
+    newName: redis
+    newTag: "7-alpine"
+  - name: postgres
+    newName: postgres
+    newTag: "15-alpine"
+
+# Replicas configuration
+replicas:
+  - name: signaling-server
+    count: 3
+  - name: postgres
+    count: 1
+  - name: redis
+    count: 1
+
+# Resource limits for namespace-wide quotas
+resourceQuotas:
+  - metadata:
+      name: tandem-watch-quota
+    spec:
+      hard:
+        requests.cpu: "10"
+        requests.memory: "20Gi"
+        limits.cpu: "20"
+        limits.memory: "40Gi"
+        pods: "100"
+        services: "10"
+        persistentvolumeclaims: "5"
+
+# Labels and selectors configuration
+vars:
+  - name: NAMESPACE
+    objref:
+      kind: Namespace
+      name: tandem-watch
+    fieldref:
+      fieldpath: metadata.name

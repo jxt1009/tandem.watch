@@ -30,7 +30,7 @@ export class URLSync {
       // If we navigated from browse to watch, set flag to respect Netflix auto-play
       if (navigatedFromBrowseToWatch) {
         console.log('[URLSync] Navigated from browse to /watch - setting auto-play flag');
-        sessionStorage.setItem('toperparty_from_browse', 'true');
+        sessionStorage.setItem('tandem_from_browse', 'true');
       }
       
       // If we changed to a different /watch page, reinitialize sync
@@ -127,16 +127,16 @@ export class URLSync {
       isPlaying: typeof existing.isPlaying === 'boolean' ? existing.isPlaying : null,
       timestamp: Date.now()
     };
-    sessionStorage.setItem('toperparty_restore', JSON.stringify(payload));
+    sessionStorage.setItem('tandem_restore', JSON.stringify(payload));
   }
-  clearState() { sessionStorage.removeItem('toperparty_restore'); }
+  clearState() { sessionStorage.removeItem('tandem_restore'); }
   getRestorationState() {
-    const stored = sessionStorage.getItem('toperparty_restore');
+    const stored = sessionStorage.getItem('tandem_restore');
     if (!stored) return null;
     try {
       const state = JSON.parse(stored);
       if (Date.now() - state.timestamp < 30000) { return state; }
-    } catch (e) { console.error('[toperparty] Failed to parse restoration state:', e); }
+    } catch (e) { console.error('[tandem] Failed to parse restoration state:', e); }
     return null;
   }
 }

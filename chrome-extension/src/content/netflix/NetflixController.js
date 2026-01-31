@@ -10,13 +10,13 @@ export class NetflixController {
     return new Promise(function(resolve) {
       const handler = function(e) {
         if (e.detail.command === command) {
-          document.removeEventListener('__toperparty_response', handler);
+          document.removeEventListener('__tandem_response', handler);
           resolve(e.detail.result);
         }
       };
-      document.addEventListener('__toperparty_response', handler);
+      document.addEventListener('__tandem_response', handler);
       setTimeout(function() { resolve(null); }, 1000);
-      document.dispatchEvent(new CustomEvent('__toperparty_command', { detail: { command, args } }));
+      document.dispatchEvent(new CustomEvent('__tandem_command', { detail: { command, args } }));
     });
   }
   play() { return this._sendCommand('play'); }
@@ -35,10 +35,10 @@ export class NetflixController {
       return null;
     }
     
-    // Find Netflix video element, excluding ToperParty videos
+    // Find Netflix video element, excluding tandem videos
     const videos = document.querySelectorAll('video');
     for (const video of videos) {
-      if (!video.id || !video.id.startsWith('toperparty-')) {
+      if (!video.id || !video.id.startsWith('tandem-')) {
         return video;
       }
     }

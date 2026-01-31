@@ -9,14 +9,14 @@ console.log('[Content Script] Initializing managers...');
 
 // Don't clean up stale elements on navigation - they should persist
 // Only clean up if party is not active
-const wasPartyActive = sessionStorage.getItem('toperparty_was_active') === 'true';
+const wasPartyActive = sessionStorage.getItem('tandem_was_active') === 'true';
 if (!wasPartyActive) {
   console.log('[Content Script] No active party detected, cleaning up stale elements...');
-  const staleContainers = document.querySelectorAll('[id^="toperparty-container-"]');
-  const staleVideos = document.querySelectorAll('[id^="toperparty-remote-"]');
-  const staleOverlays = document.querySelectorAll('[id^="toperparty-overlay-"]');
-  const staleLocalVideo = document.getElementById('toperparty-local-preview');
-  const staleWaitingIndicator = document.getElementById('toperparty-waiting-indicator');
+  const staleContainers = document.querySelectorAll('[id^="tandem-container-"]');
+  const staleVideos = document.querySelectorAll('[id^="tandem-remote-"]');
+  const staleOverlays = document.querySelectorAll('[id^="tandem-overlay-"]');
+  const staleLocalVideo = document.getElementById('tandem-local-preview');
+  const staleWaitingIndicator = document.getElementById('tandem-waiting-indicator');
 
   staleContainers.forEach(el => {
     console.log('[Content Script] Removing stale container:', el.id);
@@ -96,7 +96,7 @@ if (wasPartyActive) {
     const state = stateManager.getState();
     if (state.partyActive && localStream) {
       console.log('[Content Script] Restoring local preview video after navigation');
-      const existingPreview = document.getElementById('toperparty-local-preview');
+      const existingPreview = document.getElementById('tandem-local-preview');
       if (!existingPreview) {
         uiManager.attachLocalPreview(localStream);
       }
@@ -113,7 +113,7 @@ function startVideoElementMonitoring() {
     if (!state.partyActive) return;
     
     // Check if local preview exists
-    if (localStream && !document.getElementById('toperparty-local-preview')) {
+    if (localStream && !document.getElementById('tandem-local-preview')) {
       console.log('[Content Script] Local preview missing, re-attaching');
       uiManager.attachLocalPreview(localStream);
     }
@@ -122,7 +122,7 @@ function startVideoElementMonitoring() {
     const remoteVideos = uiManager.getRemoteVideos();
     const remoteStreams = uiManager.getRemoteStreams();
     remoteStreams.forEach((stream, peerId) => {
-      const videoId = 'toperparty-remote-' + peerId;
+      const videoId = 'tandem-remote-' + peerId;
       if (!document.getElementById(videoId)) {
         console.log('[Content Script] Remote video missing for peer:', peerId, 're-adding');
         const videoManager = webrtcManager.videoManager;

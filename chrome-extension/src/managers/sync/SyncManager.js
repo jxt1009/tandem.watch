@@ -42,13 +42,13 @@ export class SyncManager {
       console.log('[SyncManager] Video element found, setting up event listeners');
       
       // Check for pending sync from URL navigation
-      const pendingSyncStr = sessionStorage.getItem('toperparty_pending_sync');
+      const pendingSyncStr = sessionStorage.getItem('tandem_pending_sync');
       if (pendingSyncStr) {
         try {
           const pendingSync = JSON.parse(pendingSyncStr);
           if (Date.now() - pendingSync.timestamp < 10000) {
             console.log('[SyncManager] Applying pending sync from URL navigation');
-            sessionStorage.removeItem('toperparty_pending_sync');
+            sessionStorage.removeItem('tandem_pending_sync');
             this.isInitializedRef.set(true);
             
             // Apply the pending sync state
@@ -75,11 +75,11 @@ export class SyncManager {
             return;
           } else {
             console.log('[SyncManager] Pending sync expired, ignoring');
-            sessionStorage.removeItem('toperparty_pending_sync');
+            sessionStorage.removeItem('tandem_pending_sync');
           }
         } catch (e) {
           console.error('[SyncManager] Error applying pending sync:', e);
-          sessionStorage.removeItem('toperparty_pending_sync');
+          sessionStorage.removeItem('tandem_pending_sync');
         }
       }
       
@@ -87,10 +87,10 @@ export class SyncManager {
       
       // Check if we just navigated from browse - if so, respect Netflix's natural behavior
       // and become the leader that others sync to
-      const fromBrowse = sessionStorage.getItem('toperparty_from_browse');
+      const fromBrowse = sessionStorage.getItem('tandem_from_browse');
       if (fromBrowse === 'true') {
         console.log('[SyncManager] Just navigated from browse - becoming leader, will broadcast state once video is ready');
-        sessionStorage.removeItem('toperparty_from_browse');
+        sessionStorage.removeItem('tandem_from_browse');
         // Mark as initialized immediately so we start broadcasting our state
         this.isInitializedRef.set(true);
         

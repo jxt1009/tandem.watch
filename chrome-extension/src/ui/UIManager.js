@@ -86,7 +86,7 @@ export class UIManager {
     this.removeLocalPreview();
     
     const v = document.createElement('video');
-    v.id = 'toperparty-local-preview';
+    v.id = 'tandem-local-preview';
     v.autoplay = true;
     v.muted = true; // Always mute local preview to avoid feedback
     v.playsInline = true;
@@ -148,7 +148,7 @@ export class UIManager {
     this.removeConnectionIndicator();
 
     const indicator = document.createElement('div');
-    indicator.id = 'toperparty-connection-indicator';
+    indicator.id = 'tandem-connection-indicator';
     indicator.style.cssText = `
       position: fixed;
       top: 10px;
@@ -171,7 +171,7 @@ export class UIManager {
     `;
 
     const dot = document.createElement('div');
-    dot.id = 'toperparty-connection-dot';
+    dot.id = 'tandem-connection-dot';
     dot.style.cssText = `
       width: 8px;
       height: 8px;
@@ -181,7 +181,7 @@ export class UIManager {
     `;
 
     const text = document.createElement('span');
-    text.id = 'toperparty-connection-text';
+    text.id = 'tandem-connection-text';
     text.textContent = 'Connected';
 
     indicator.appendChild(dot);
@@ -190,7 +190,7 @@ export class UIManager {
 
     // Add pulse animation
     const style = document.createElement('style');
-    style.id = 'toperparty-connection-style';
+    style.id = 'tandem-connection-style';
     style.textContent = `
       @keyframes pulse {
         0%, 100% { opacity: 1; }
@@ -207,8 +207,8 @@ export class UIManager {
   }
 
   updateConnectionIndicator(status) {
-    const dot = document.getElementById('toperparty-connection-dot');
-    const text = document.getElementById('toperparty-connection-text');
+    const dot = document.getElementById('tandem-connection-dot');
+    const text = document.getElementById('tandem-connection-text');
     
     if (dot && text) {
       if (status === 'connected') {
@@ -228,7 +228,7 @@ export class UIManager {
   }
 
   removeConnectionIndicator() {
-    const indicator = document.getElementById('toperparty-connection-indicator');
+    const indicator = document.getElementById('tandem-connection-indicator');
     if (indicator) {
       indicator.remove();
     }

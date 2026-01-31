@@ -72,7 +72,7 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
       // This allows initial sync to pull you to the watch page, but won't pull you back if you leave
       if (!isOnWatch && otherIsOnWatch && isOnBrowse) {
         console.log('[SyncManager] On browse page during initial join, other user on /watch - navigating to their show');
-        sessionStorage.setItem('toperparty_pending_sync', JSON.stringify({
+        sessionStorage.setItem('tandem_pending_sync', JSON.stringify({
           currentTime,
           isPlaying,
           timestamp: Date.now()
@@ -92,7 +92,7 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
       if (url && url !== currentUrl) {
         console.log('[SyncManager] URL mismatch - navigating from', currentUrl, 'to', url);
         // Store the sync state to apply after navigation
-        sessionStorage.setItem('toperparty_pending_sync', JSON.stringify({
+        sessionStorage.setItem('tandem_pending_sync', JSON.stringify({
           currentTime,
           isPlaying,
           timestamp: Date.now()

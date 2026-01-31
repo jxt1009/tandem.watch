@@ -1,8 +1,69 @@
 version: "3.8"
+
 services:
-  signaling:
+  redis:
+    image: redis:7-alpine
+    container_name: tandem-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: tandem-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: tandem_watch
+      POSTGRES_USER: tandem
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tandem"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  signaling-server:
     build: .
-    container_name: signaling
+    container_name: tandem-signaling
     ports:
       - "4001:4001"
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      PORT: 4001
+      HOST: 0.0.0.0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: tandem_watch
+      POSTGRES_USER: tandem
+      POSTGRES_PASSWORD: postgres
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  postgres_data:
