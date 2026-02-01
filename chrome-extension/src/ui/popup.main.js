@@ -1,3 +1,5 @@
+import { CONFIG } from '../config.js';
+
 let status = { isConnected: false, roomId: null, userId: null, hasLocalStream: false };
 
 // Username management
@@ -110,22 +112,17 @@ function initializeDOMElements() {
 }
 
 // Import and display server URL from config
-import('../config.js').then(({ CONFIG }) => {
+try {
   console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
-}).catch(err => {
+} catch (err) {
   console.warn('[Popup] Could not load config:', err);
-});
+}
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     initializeDOMElements();
       updateUI();
-        import('../config.js').then(({ CONFIG }) => {
-          console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
-        }).catch(err => {
-          console.warn('[Popup] Could not load config:', err);
-        });
     setupEventListeners();
     loadUsername().then(() => {
       updateStatus();
@@ -136,11 +133,6 @@ if (document.readyState === 'loading') {
   // DOM is already loaded
   initializeDOMElements();
     updateUI();
-  import('../config.js').then(({ CONFIG }) => {
-    console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
-  }).catch(err => {
-    console.warn('[Popup] Could not load config:', err);
-  });
   setupEventListeners();
   loadUsername().then(() => {
     updateStatus();
@@ -156,7 +148,7 @@ async function getOrCreateShortId(roomId) {
   // Query the signaling server to get or create a short ID for this room
   try {
     // Get the server URL from config
-    const config = await import('../config.js').then(m => m.CONFIG);
+    const config = CONFIG;
     const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
     
     // We'll fetch this from the server - it will create the mapping
@@ -178,7 +170,7 @@ function buildShareLink(roomId) {
   // Build a short URL instead of full Netflix URL
   return new Promise(async (resolve) => {
     try {
-      const config = await import('../config.js').then(m => m.CONFIG);
+      const config = CONFIG;
       const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
       const shortId = await getOrCreateShortId(roomId);
       const shortUrl = `${serverUrl}/room/${shortId}`;
@@ -214,28 +206,30 @@ function updateShareLink() {
 }
 
 async function joinRoomByCode() {
-  const code = roomCodeInput.value.trim();
-  if (!code) {
+  const rawInput = roomCodeInput.value.trim();
+  if (!rawInput) {
     alert('Please enter a room code');
     return;
   }
-  
+
+  const parsed = parseRoomInput(rawInput);
+  if (parsed.type === 'invalid' || parsed.type === 'empty') {
+    alert('Please enter a valid room code or share link');
+    return;
+  }
+
   joinRoomBtn.disabled = true;
   try {
-    // Get the server URL from config
-    const config = await import('../config.js').then(m => m.CONFIG);
-    const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
-    
-    // Look up the roomId from the short code
-    const response = await fetch(`${serverUrl}/api/room/${encodeURIComponent(code)}`);
-    if (!response.ok) {
-      alert('Room code not found. Please check and try again.');
-      joinRoomBtn.disabled = false;
-      return;
+    let roomId = null;
+    if (parsed.type === 'roomId') {
+      roomId = parsed.roomId;
+    } else {
+      // Get the server URL from config
+      const config = CONFIG;
+      const serverUrl = config.WS.URL.replace(/^wss?:\/\//, 'https://').replace(/\/ws$/, '');
+
+      roomId = await resolveRoomIdFromShortId(serverUrl, parsed.shortId);
     }
-    
-    const data = await response.json();
-    const roomId = data.roomId;
     
     // Start party with the retrieved roomId and username
     chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: persistedUsername }, (response) => {
@@ -252,6 +246,74 @@ async function joinRoomByCode() {
     alert('Failed to join room: ' + err.message);
     joinRoomBtn.disabled = false;
   }
+}
+
+async function resolveRoomIdFromShortId(serverUrl, shortId) {
+  // First try the JSON API
+  try {
+    const response = await fetch(`${serverUrl}/api/room/${encodeURIComponent(shortId)}`);
+    if (!response.ok) {
+      throw new Error('Room code not found');
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const text = await response.text();
+      // If server doesn't support /api/room, fall through to redirect-based lookup
+      if (!text.includes('Signaling server running')) {
+        throw new Error(`Unexpected response from server: ${text.slice(0, 160)}`);
+      }
+    } else {
+      const data = await response.json();
+      if (data && data.roomId) return data.roomId;
+    }
+  } catch (err) {
+    if (err?.message === 'Room code not found') {
+      throw err;
+    }
+  }
+
+  // Fallback: use /room/:shortId redirect and extract tandemRoom from Location header
+  const redirectResponse = await fetch(`${serverUrl}/room/${encodeURIComponent(shortId)}`, {
+    redirect: 'manual'
+  });
+
+  const location = redirectResponse.headers.get('location');
+  if (location) {
+    const match = location.match(/[?&]tandemRoom=([^&]+)/i);
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+  }
+
+  throw new Error('Room codes are not supported on this server. Ask the host for a full Netflix link with ?tandemRoom=... or update the signaling server.');
+}
+
+function parseRoomInput(input) {
+  if (!input) return { type: 'empty' };
+  const trimmed = input.trim();
+
+  const tandemRoomMatch = trimmed.match(/[?&]tandemRoom=([^&]+)/i);
+  if (tandemRoomMatch) {
+    return { type: 'roomId', roomId: decodeURIComponent(tandemRoomMatch[1]) };
+  }
+
+  const roomUrlMatch = trimmed.match(/\/room\/([a-z0-9]+)/i);
+  if (roomUrlMatch) {
+    return { type: 'shortId', shortId: roomUrlMatch[1] };
+  }
+
+  const uuidMatch = trimmed.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  if (uuidMatch) {
+    return { type: 'roomId', roomId: trimmed };
+  }
+
+  const shortIdMatch = trimmed.match(/^([a-z0-9]{3,})$/i);
+  if (shortIdMatch) {
+    return { type: 'shortId', shortId: shortIdMatch[1] };
+  }
+
+  return { type: 'invalid' };
 }
 
 function setupEventListeners() {
@@ -537,10 +599,10 @@ async function updateStats() {
 
   try {
     // Import config to get the server URL
-    const { CONFIG } = await import('../config.js');
+    const config = CONFIG;
     
     // Fetch stats from signaling server (construct HTTP URL from WebSocket URL)
-    const httpUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
+    const httpUrl = config.WS.URL.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
     const statusUrl = httpUrl + '/status';
     
     console.log('[Popup] Fetching stats from server:', statusUrl, 'at', new Date().toISOString());
