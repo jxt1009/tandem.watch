@@ -163,10 +163,17 @@ kubectl patch svc tandem-watch-api -p '{"spec":{"type":"NodePort"}}' -n tandem-w
 kubectl get svc -n tandem-watch
 ```
 
-### 4.2 Set Up Port Forwarding (Development)
+### 4.2 Access the Service
 ```bash
-# Forward local port to service
-kubectl port-forward -n tandem-watch svc/tandem-watch-api 4001:4001
+# Check service details and NodePort
+kubectl get svc -n tandem-watch -o wide
+
+# External access: http://10.0.0.102:30401
+curl -I http://10.0.0.102:30401/health
+
+# Or port-forward if you need port 4001 locally
+kubectl port-forward -n tandem-watch svc/signaling-server 4001:4001 &
+# Then: ws://localhost:4001/ws
 ```
 
 ### 4.3 Configure DNS/TLS (Production)

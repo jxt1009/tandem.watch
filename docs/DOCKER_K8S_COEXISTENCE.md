@@ -31,8 +31,9 @@ A guide for deploying tandem.watch on a server with existing Docker/Docker Compo
 Your k8s config tries to expose the signaling server on **port 80**. If any of your existing Docker services are already using common ports, you'll have issues.
 
 **Your tandem.watch needs:**
-- **Port 80 or 443** (HTTP/HTTPS for signaling server WebSocket)
-- **Port 4001** (internal, only if using NodePort)
+- **Port 4001** (internal container port)
+- **Port 30401** (external NodePort for Kubernetes deployment) ✅ CONFIGURED
+- **Port 80 or 443** (for reverse proxy / HTTPS, optional)
 
 **Common ports that could conflict:**
 - Port 80 (web servers, reverse proxies)
@@ -53,15 +54,23 @@ sudo lsof -i -P -n | grep LISTEN
 
 **Solution**: Update k8s service to use a different port or clean approach:
 
-Option A: **Use different port for tandem.watch** (recommended)
+Option A: **Use NodePort for tandem.watch** ✅ (IMPLEMENTED)
 ```yaml
-# Update k8s/service.yaml
+# k8s/service.yaml (currently deployed)
 ports:
   - name: ws
-    port: 4001          # External port on server
-    targetPort: 4001    # Internal container port
+    port: 4001              # ClusterIP internal port
+    targetPort: 4001        # Container port
+    nodePort: 30401         # External NodePort (30000-32767 range)
     protocol: TCP
 ```
+**Access externally**: `http://10.0.0.102:30401`
+
+---
+
+### Port 4001 vs NodePort 30401
+
+**Why the different port?** Kubernetes requires NodePorts to be in the range 30000-32767. The container still runs on port 4001 internally, but external access goes through the NodePort.
 
 Option B: **Stop conflicting services temporarily** (not recommended for production)
 
@@ -185,9 +194,9 @@ Your existing services:
 - Other tools: ???
 
 tandem.watch (k8s) will need:
-- Signaling server WebSocket: 4001 (or different if needed)
-- PostgreSQL: (reuse existing on 5432, or 5433 if separate)
-- Redis: 6379 (or 6380 if separate)
+- Signaling server WebSocket: 4001 (internal) → 30401 (external NodePort)
+- PostgreSQL: 5432 (K8s internal, isolated from Docker)
+- Redis: 6379 (K8s internal, isolated from Docker)
 ```
 
 ### **Step 3: Choose Integration Strategy**
@@ -199,11 +208,11 @@ tandem.watch (k8s) will need:
 │ - Other apps                               │
 └────────────────────────────────────────────┘
 
-┌─ Kubernetes (Single-node) ─────────────────┐
-│ - tandem.watch signaling server: 4001      │
-│ - (uses existing PostgreSQL on 5432)       │
-│ - Redis (internal to k8s or reused)        │
-└────────────────────────────────────────────┘
+┌─ Kubernetes (Single-node) ─────────────────────┐
+│ - tandem.watch signaling server: 30401 (NodePort) │
+│ - PostgreSQL: 5432 (internal K8s)             │
+│ - Redis: 6379 (internal K8s)                  │
+└───────────────────────────────────────────────────┘
 ```
 
 **Config changes needed:**
@@ -227,8 +236,9 @@ data:
 - [ ] Decide: reuse existing DB or separate k8s DB?
 - [ ] Update k8s configmap with correct DB host/credentials
 - [ ] Remove unused k8s manifests (postgres.yaml, redis.yaml)
-- [ ] Verify port 4001 is available (or change in k8s)
-- [ ] Test k8s PostgreSQL connectivity from container
+- [x] Configured NodePort 30401 for external access
+- [x] PostgreSQL and Redis running isolated in K8s
+- [x] All services deployed and tested
 - [ ] Deploy and monitor resource usage
 
 ---
@@ -283,14 +293,19 @@ sudo ufw allow 5432/tcp
 # Connect locally and run: SELECT * FROM pg_stat_connections;
 ```
 
-### Port already in use errors
-```bash
-# Kill process using port
-sudo lsof -i :4001
-sudo kill -9 <PID>
+### External access via NodePort
 
-# Or use different port in k8s service
+If you need to access the signaling server on port 4001 externally (instead of 30401), use port-forward:
+
+```bash
+# Port-forward from 4001 to 30401
+kubectl port-forward -n tandem-watch svc/signaling-server 4001:4001 &
+
+# Then access: ws://localhost:4001/ws or curl http://localhost:4001/health
+curl -I http://localhost:4001/health
 ```
+
+**Why NodePort 30401?** Kubernetes enforces port range 30000-32767 for NodePorts. Direct access is on 10.0.0.102:30401.
 
 ### Resource contention issues
 ```bash

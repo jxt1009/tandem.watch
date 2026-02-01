@@ -1,5 +1,12 @@
 export class BackgroundService {
   constructor() {
+    // Import configuration
+    import('../config.js').then(({ CONFIG }) => {
+      this.wsUrl = CONFIG.WS.URL;
+      this.maxReconnectAttempts = CONFIG.WS.MAX_RECONNECT_ATTEMPTS;
+      this.reconnectDelayMs = CONFIG.WS.RECONNECT_DELAY_MS;
+    });
+    
     this.ws = null;
     this.localStream = null;
     this.isConnected = false;
@@ -12,6 +19,9 @@ export class BackgroundService {
     this.heartbeatInterval = null;
     this.heartbeatTimeout = null;
     this.missedHeartbeats = 0;
+    this.reconnectDelayMs = 3000;
+    // Default WebSocket URL (will be overridden by config)
+    this.wsUrl = 'ws://10.0.0.102:30401/ws';
   }
 
   generateUserId() {
@@ -60,8 +70,8 @@ export class BackgroundService {
 
   connectToSignalingServer(resolve, reject) {
     try {
-      console.log('[BackgroundService] Connecting to signaling server...');
-      this.ws = new WebSocket('ws://watch.toper.dev/ws');
+      console.log('[BackgroundService] Connecting to signaling server:', this.wsUrl);
+      this.ws = new WebSocket(this.wsUrl);
       this.ws.onopen = () => {
         console.log('[BackgroundService] Connected to signaling server');
         this.isConnected = true;
@@ -238,10 +248,10 @@ export class BackgroundService {
   }
 
   reconnect() {
-    console.log('[BackgroundService] Reconnecting to signaling server...');
+    console.log('[BackgroundService] Reconnecting to signaling server:', this.wsUrl);
     this.intentionalDisconnect = false;
     try {
-      this.ws = new WebSocket('ws://watch.toper.dev/ws');
+      this.ws = new WebSocket(this.wsUrl);
       this.ws.onopen = () => {
         console.log('[BackgroundService] Reconnected successfully');
         this.isConnected = true;

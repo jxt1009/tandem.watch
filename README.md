@@ -52,7 +52,7 @@ A Chrome extension for synchronized Netflix watch parties with built-in video ch
    npm install
    npm start
    ```
-   Server runs on port 4001 with WebSocket at `/ws`
+   Server runs on port 4001 internally. When deployed on Kubernetes, access via NodePort 30401: `http://10.0.0.102:30401`
 
 ### Usage
 

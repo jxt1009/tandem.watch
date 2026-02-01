@@ -18,6 +18,17 @@ const remoteUsersList = document.getElementById('remote-users-list');
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 const copyRoomBtn = document.getElementById('copy-room-btn');
+const serverUrlEl = document.getElementById('server-url');
+
+// Import and display server URL from config
+import('../config.js').then(({ CONFIG }) => {
+  if (serverUrlEl) {
+    serverUrlEl.textContent = CONFIG.WS.URL;
+  }
+  console.log('[Popup] Connected to signaling server:', CONFIG.WS.URL);
+}).catch(err => {
+  console.warn('[Popup] Could not load config:', err);
+});
 
 updateStatus();
 setupEventListeners();
