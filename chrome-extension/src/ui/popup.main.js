@@ -580,7 +580,7 @@ async function updateStats() {
     const config = CONFIG;
     
     // Fetch stats from signaling server (construct HTTP URL from WebSocket URL)
-    const httpUrl = config.WS.URL.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
+    const httpUrl = config.WS.URL.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://').replace(/\/ws$/, '');
     const statusUrl = httpUrl + '/status';
     
     console.log('[Popup] Fetching stats from server:', statusUrl, 'at', new Date().toISOString());
