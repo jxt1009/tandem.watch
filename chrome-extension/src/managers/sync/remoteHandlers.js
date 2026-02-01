@@ -120,15 +120,18 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
         return;
       }
 
-      // If server returns a default timestamp (0), wait briefly for Netflix resume
+      // If sync returns a near-zero timestamp, wait briefly for Netflix resume
       // and prefer local progress to avoid resetting watch history.
-      if (fromUserId === 'server' && currentTime <= 1) {
+      // This handles cases where room state is default or stale.
+      if (currentTime <= 2) {
         try {
+          console.log('[SyncManager] Received near-zero sync (', currentTime.toFixed(2) + 's), checking for local resume position from', fromUserId);
           const waitForLocalResume = async () => {
             const attempts = 8;
             const delayMs = 500;
             for (let i = 0; i < attempts; i++) {
               const localTimeMs = await netflix.getCurrentTime();
+              console.log('[SyncManager] Resume check attempt', i + 1, '- local time:', localTimeMs != null ? (localTimeMs / 1000).toFixed(2) + 's' : 'null');
               if (localTimeMs != null && localTimeMs > 5000) {
                 return localTimeMs;
               }
@@ -141,7 +144,7 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
           if (localTimeMs != null && localTimeMs > 5000) {
             const localPaused = await netflix.isPaused();
             const localSeconds = localTimeMs / 1000;
-            console.log('[SyncManager] Ignoring server default sync (0s) and using local resume position:', localSeconds.toFixed(2) + 's');
+            console.log('[SyncManager] Using local resume position instead of near-zero sync:', localSeconds.toFixed(2) + 's', localPaused ? 'paused' : 'playing');
             isInitializedRef.set(true);
             if (onInitialSyncApplied) onInitialSyncApplied();
             state.safeSendMessage({
@@ -150,6 +153,8 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
               isPlaying: !localPaused
             });
             return;
+          } else {
+            console.log('[SyncManager] No local resume position found after waiting, applying sync at', currentTime.toFixed(2) + 's');
           }
         } catch (e) {
           console.warn('[SyncManager] Error checking local resume position:', e);
