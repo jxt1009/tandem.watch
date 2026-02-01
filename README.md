@@ -39,14 +39,26 @@ A Chrome extension for synchronized Netflix watch parties with built-in video ch
    ```bash
    npm run build
    ```
+   This generates the `dist/` folder with all compiled assets including `content-script.js`.
 
-3. **Load in Chrome**
+3. **Configure WebSocket server** (optional)
+   Edit `chrome-extension/src/config.js` to point to your signaling server:
+   ```javascript
+   // For Kubernetes deployment (default)
+   URL: 'ws://10.0.0.102:30401/ws',
+   
+   // For local development
+   // URL: 'ws://localhost:4001/ws',
+   ```
+   Then rebuild with `npm run build` to apply changes.
+
+4. **Load in Chrome**
    - Go to `chrome://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked"
    - Select the `dist/` folder
 
-4. **Start the signaling server**
+5. **Start the signaling server**
    ```bash
    cd signaling_server
    npm install
