@@ -257,6 +257,7 @@ wss.on('connection', (ws, req) => {
   let userId = null;
   let roomId = null;
   let peerId = uuidv4();
+  let hasLeft = false;
 
   logger.debug({ clientIp, peerId }, 'Client connected');
 
@@ -471,8 +472,39 @@ wss.on('connection', (ws, req) => {
         }
       }
 
+      // ===== LEAVE =====
+      else if (type === 'LEAVE') {
+        if (!roomId || !userId) return;
+
+        hasLeft = true;
+        logger.debug({ userId, roomId, peerId }, 'User left room');
+
+        await UserRepository.delete(userId);
+
+        const users = await UserRepository.getRoomUsers(roomId);
+        if (users.length === 0) {
+          await RoomRepository.delete(roomId);
+          localRoomSubscribers.delete(roomId);
+          logger.debug({ roomId }, 'Room cleaned up (empty after LEAVE)');
+        }
+
+        broadcastToRoom(roomId, {
+          type: 'USER_LEFT',
+          userId,
+          peerId,
+          timestamp: Date.now(),
+        });
+
+        await EventRepository.log(roomId, 'USER_LEFT', userId, { peerId });
+
+        localRoomSubscribers.get(roomId)?.delete(ws);
+        wsConnections.delete(ws);
+
+        try { ws.close(1000, 'Client left'); } catch (e) {}
+      }
+
       // ===== BROADCAST (fallback) =====
-      else if (roomId && type !== 'LEAVE') {
+      else if (roomId) {
         broadcastToRoom(roomId, {
           ...data,
           userId,
@@ -487,6 +519,11 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', async () => {
+    if (hasLeft) {
+      localRoomSubscribers.get(roomId)?.delete(ws);
+      wsConnections.delete(ws);
+      return;
+    }
     if (userId && roomId) {
       logger.debug({ userId, roomId, peerId }, 'User disconnected');
 

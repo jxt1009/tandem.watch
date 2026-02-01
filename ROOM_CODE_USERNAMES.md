@@ -122,7 +122,7 @@ The extension popup now has these sections:
 │ Your ID: Alice                  │  ← Shows username
 │ Webcam/Mic: Streaming          │
 │                                 │
-│ [Stop Party] [Reset Party]     │
+│ [Leave Party]                  │
 └─────────────────────────────────┘
 ```
 

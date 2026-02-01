@@ -1,4 +1,4 @@
-export function createRemoteHandlers({ state, netflix, lock, isInitializedRef }) {
+export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, shouldAcceptLateSync, onInitialSyncApplied }) {
   async function applyRemote(actionName, durationMs, actionFn) {
     lock.set(durationMs);
     try { await actionFn(); } catch (err) {
@@ -58,9 +58,13 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
       attemptSyncResponse(1);
     },
     async handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay = false) {
-      if (isInitializedRef.get()) {
+      if (isInitializedRef.get() && !shouldAcceptLateSync?.()) {
         console.log('[SyncManager] Already initialized, ignoring late SYNC_RESPONSE');
         return;
+      }
+
+      if (isInitializedRef.get() && shouldAcceptLateSync?.()) {
+        console.log('[SyncManager] Accepting late SYNC_RESPONSE within initial window');
       }
       
       if (currentTime == null || typeof currentTime !== 'number' || currentTime < 0) {
@@ -98,6 +102,7 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
       if (!isOnWatch) {
         console.log('[SyncManager] Not on /watch page - ignoring sync response');
         isInitializedRef.set(true); // Mark as initialized so we don't keep processing these
+        if (onInitialSyncApplied) onInitialSyncApplied();
         return;
       }
       
@@ -114,8 +119,32 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
         window.location.href = url;
         return;
       }
+
+      // If server returns a default timestamp (0) but local playback has progress,
+      // prefer local progress to avoid resetting resume positions.
+      if (fromUserId === 'server' && currentTime <= 1) {
+        try {
+          const localTimeMs = await netflix.getCurrentTime();
+          if (localTimeMs != null && localTimeMs > 5000) {
+            const localPaused = await netflix.isPaused();
+            const localSeconds = localTimeMs / 1000;
+            console.log('[SyncManager] Ignoring server default sync (0s) and using local resume position:', localSeconds.toFixed(2) + 's');
+            isInitializedRef.set(true);
+            if (onInitialSyncApplied) onInitialSyncApplied();
+            state.safeSendMessage({
+              type: 'POSITION_UPDATE',
+              currentTime: localSeconds,
+              isPlaying: !localPaused
+            });
+            return;
+          }
+        } catch (e) {
+          console.warn('[SyncManager] Error checking local resume position:', e);
+        }
+      }
       
       isInitializedRef.set(true);
+      if (onInitialSyncApplied) onInitialSyncApplied();
       
       await applyRemote('initial-sync', 1500, async () => {
         await netflix.seek(currentTime * 1000);

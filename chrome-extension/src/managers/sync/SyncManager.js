@@ -15,12 +15,21 @@ export class SyncManager {
     this.lock = new SyncLock();
     this.isInitializedRef = new MutableRef(false);
     this.listeners = null;
+    this.initialSyncRequestAt = 0;
+    this.initialSyncWindowMs = 8000;
 
     this.remote = createRemoteHandlers({
       state: this.state,
       netflix: this.netflix,
       lock: this.lock,
       isInitializedRef: this.isInitializedRef,
+      shouldAcceptLateSync: () => {
+        if (!this.initialSyncRequestAt) return false;
+        return (Date.now() - this.initialSyncRequestAt) < this.initialSyncWindowMs;
+      },
+      onInitialSyncApplied: () => {
+        this.initialSyncRequestAt = 0;
+      }
     });
   }
 
@@ -50,6 +59,7 @@ export class SyncManager {
             console.log('[SyncManager] Applying pending sync from URL navigation');
             sessionStorage.removeItem('tandem_pending_sync');
             this.isInitializedRef.set(true);
+            this.initialSyncRequestAt = 0;
             
             // Apply the pending sync state
             this.lock.set(1500);
@@ -94,6 +104,7 @@ export class SyncManager {
         sessionStorage.removeItem('tandem_from_browse');
         // Mark as initialized immediately so we start broadcasting our state
         this.isInitializedRef.set(true);
+        this.initialSyncRequestAt = 0;
         
         // Wait for video to be ready before broadcasting state
         const broadcastLeaderState = async () => {
@@ -149,12 +160,13 @@ export class SyncManager {
         // Wait for video to be ready before requesting sync
         const requestSyncWhenReady = () => {
           console.log('[SyncManager] Video ready - requesting initial sync from other clients');
+          this.initialSyncRequestAt = Date.now();
           this.state.safeSendMessage({ type: 'REQUEST_SYNC' });
           
           // If no response after 2 seconds, consider ourselves initialized
           setTimeout(() => {
             if (!this.isInitializedRef.get()) {
-              console.log('[SyncManager] No sync response received after 2s, marking as initialized');
+              console.log('[SyncManager] No sync response received after 2s, marking as initialized (will still accept late sync briefly)');
               this.isInitializedRef.set(true);
               console.log('[SyncManager] isInitialized is now:', this.isInitializedRef.get());
             } else {
