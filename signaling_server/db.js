@@ -63,7 +63,7 @@ export async function initializeDatabase() {
         id VARCHAR(50) PRIMARY KEY,
         host_user_id VARCHAR(100),
         current_url TEXT,
-        current_time FLOAT,
+        "current_time" FLOAT,
         is_playing BOOLEAN,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -73,7 +73,7 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(100) PRIMARY KEY,
         room_id VARCHAR(50),
-        current_time FLOAT,
+        "current_time" FLOAT,
         is_playing BOOLEAN,
         connection_quality VARCHAR(20),
         last_heartbeat TIMESTAMP,
@@ -110,7 +110,7 @@ export const RoomRepository = {
     try {
       // Save to PostgreSQL
       await pgPool.query(
-        `INSERT INTO rooms (id, host_user_id, is_playing, current_time)
+        `INSERT INTO rooms (id, host_user_id, is_playing, "current_time")
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (id) DO UPDATE SET host_user_id = $2`,
         [roomId, hostUserId, false, 0]
@@ -193,19 +193,19 @@ export const RoomRepository = {
       let paramCount = 1;
 
       if (updates.currentUrl !== undefined) {
-        fields.push(`current_url = $${paramCount++}`);
+        fields.push(`"current_url" = $${paramCount++}`);
         values.push(updates.currentUrl);
       }
       if (updates.currentTime !== undefined) {
-        fields.push(`current_time = $${paramCount++}`);
+        fields.push(`"current_time" = $${paramCount++}`);
         values.push(updates.currentTime);
       }
       if (updates.isPlaying !== undefined) {
-        fields.push(`is_playing = $${paramCount++}`);
+        fields.push(`"is_playing" = $${paramCount++}`);
         values.push(updates.isPlaying);
       }
       if (updates.hostUserId !== undefined) {
-        fields.push(`host_user_id = $${paramCount++}`);
+        fields.push(`"host_user_id" = $${paramCount++}`);
         values.push(updates.hostUserId);
       }
 
@@ -274,7 +274,7 @@ export const UserRepository = {
     try {
       // PostgreSQL
       await pgPool.query(
-        `INSERT INTO users (id, room_id, current_time, is_playing, last_heartbeat)
+        `INSERT INTO users (id, room_id, "current_time", "is_playing", last_heartbeat)
          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
          ON CONFLICT (id) DO UPDATE SET room_id = $2, last_heartbeat = CURRENT_TIMESTAMP`,
         [userId, roomId, 0, false]
