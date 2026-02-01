@@ -1,27 +1,21 @@
+import { CONFIG } from '../config.js';
+
 export class BackgroundService {
   constructor() {
-    // Import configuration
-    import('../config.js').then(({ CONFIG }) => {
-      this.wsUrl = CONFIG.WS.URL;
-      this.maxReconnectAttempts = CONFIG.WS.MAX_RECONNECT_ATTEMPTS;
-      this.reconnectDelayMs = CONFIG.WS.RECONNECT_DELAY_MS;
-    });
-    
     this.ws = null;
     this.localStream = null;
     this.isConnected = false;
     this.roomId = null;
     this.userId = this.generateUserId();
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
+    this.maxReconnectAttempts = CONFIG.WS.MAX_RECONNECT_ATTEMPTS;
     this.reconnectTimer = null;
     this.intentionalDisconnect = false;
     this.heartbeatInterval = null;
     this.heartbeatTimeout = null;
     this.missedHeartbeats = 0;
-    this.reconnectDelayMs = 3000;
-    // Default WebSocket URL (will be overridden by config)
-    this.wsUrl = 'ws://10.0.0.102:30401/ws';
+    this.reconnectDelayMs = CONFIG.WS.RECONNECT_DELAY_MS;
+    this.wsUrl = CONFIG.WS.URL;
   }
 
   generateUserId() {
