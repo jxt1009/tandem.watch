@@ -25,7 +25,7 @@ import('../config.js').then(({ CONFIG }) => {
   if (serverUrlEl) {
     serverUrlEl.textContent = CONFIG.WS.URL;
   }
-  console.log('[Popup] Connected to signaling server:', CONFIG.WS.URL);
+  console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
 }).catch(err => {
   console.warn('[Popup] Could not load config:', err);
 });
@@ -145,9 +145,15 @@ async function updateStats() {
   }
 
   try {
-    // Fetch stats from signaling server
-    console.log('[Popup] Fetching stats from server...');
-    const response = await fetch('http://watch.toper.dev/status');
+    // Import config to get the server URL
+    const { CONFIG } = await import('../config.js');
+    
+    // Fetch stats from signaling server (construct HTTP URL from WebSocket URL)
+    const httpUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
+    const statusUrl = httpUrl + '/status';
+    
+    console.log('[Popup] Fetching stats from server:', statusUrl);
+    const response = await fetch(statusUrl);
     if (!response.ok) {
       console.error('[Popup] Failed to fetch server status:', response.status, response.statusText);
       return;
