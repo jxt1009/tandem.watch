@@ -276,7 +276,9 @@ wss.on('connection', (ws, req) => {
         const currentTime = data.currentTime || 0;
         const isPlaying = data.isPlaying || false;
 
+        // Update both the user and the room with current position
         await UserRepository.update(userId, { currentTime, isPlaying });
+        await RoomRepository.update(roomId, { currentTime, isPlaying });
         // Don't broadcast position updates, just track them
       }
 
