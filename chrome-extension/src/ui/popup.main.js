@@ -223,12 +223,15 @@ async function updateStats() {
           const isOutOfSync = timeDiff > 2; // More than 2 seconds off
           const statusColor = user.isPlaying ? '#4ade80' : '#fbbf24';
           const syncColor = isOutOfSync ? '#ef4444' : '#4ade80';
+          const isCurrentUser = user.userId === status.userId;
+          const bgColor = isCurrentUser ? 'rgba(167, 139, 250, 0.1)' : 'transparent';
+          const borderColor = isCurrentUser ? '1px solid rgba(167, 139, 250, 0.3)' : '1px solid rgba(255,255,255,0.1)';
           
           return `
-            <div style="padding: 8px; border-top: 1px solid rgba(255,255,255,0.1); ${index === 0 ? 'border-top: none;' : ''}">
+            <div style="padding: 8px; border-top: ${borderColor}; background-color: ${bgColor}; ${index === 0 ? 'border-top: none;' : ''}">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                 <div style="font-weight: 600; font-size: 12px; color: rgba(255,255,255,0.9);">
-                  ${user.userId.substring(0, 8)}...
+                  ${user.userId.substring(0, 8)}...${isCurrentUser ? ' (You)' : ''}
                 </div>
                 <div style="font-size: 10px; color: ${statusColor};">
                   ${user.isPlaying ? '▶' : '⏸'}
