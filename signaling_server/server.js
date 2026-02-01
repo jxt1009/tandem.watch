@@ -63,10 +63,22 @@ const server = http.createServer((req, res) => {
 
   if (req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
+    
+    // Collect room information
+    const rooms = [];
+    for (const [roomId, subscribers] of localRoomSubscribers) {
+      rooms.push({
+        roomId,
+        connectionCount: subscribers.size,
+      });
+    }
+    
     const status = {
       nodeId: config.nodeId,
       timestamp: new Date().toISOString(),
       localConnections: wsConnections.size,
+      localRooms: localRoomSubscribers.size,
+      rooms,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
     };
