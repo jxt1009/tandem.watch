@@ -25,13 +25,9 @@ spec:
       # Single-node cluster, so skip anti-affinity
       containers:
       - name: signaling-server
-        image: node:20-alpine
-        imagePullPolicy: IfNotPresent
+        image: tandem-watch-signaling:latest
+        imagePullPolicy: Never
         workingDir: /app
-        command:
-        - sh
-        - -c
-        - npm install && npm start
         ports:
         - name: ws
           containerPort: 4001
