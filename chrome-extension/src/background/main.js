@@ -4,7 +4,7 @@ const backgroundService = new BackgroundService();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'START_PARTY') {
-    backgroundService.startParty(request.roomId).then(() => {
+    backgroundService.startParty(request.roomId, request.username).then(() => {
       sendResponse({ success: true });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });

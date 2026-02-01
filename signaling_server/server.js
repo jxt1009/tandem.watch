@@ -213,8 +213,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Handle API to lookup roomId from shortId: /api/room/:shortId
+  const roomLookupMatch = req.url.match(/^\/api\/room\/([a-z0-9]+)$/i);
+  if (roomLookupMatch) {
+    const shortId = roomLookupMatch[1];
+    (async () => {
+      try {
+        const roomId = await getRoomIdFromShortId(shortId);
+        if (!roomId) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Room not found' }));
+          logger.warn({ shortId }, 'Room lookup failed - short ID not found');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ roomId, shortId }));
+        logger.debug({ shortId, roomId }, 'Room lookup successful');
+      } catch (err) {
+        logger.error({ err, shortId }, 'Error looking up room');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to lookup room' }));
+      }
+    })();
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end(`Signaling server running (${config.nodeId})\nEndpoints: /status, /health, /metrics, /room/:shortId`);
+  res.end(`Signaling server running (${config.nodeId})\nEndpoints: /status, /health, /metrics, /room/:shortId, /api/short-id/:roomId, /api/room/:shortId`);
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });

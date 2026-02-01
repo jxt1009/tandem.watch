@@ -1,8 +1,42 @@
 let status = { isConnected: false, roomId: null, userId: null, hasLocalStream: false };
 
+// Username management
+let persistedUsername = null;
+
+async function loadUsername() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['tandemUsername'], (result) => {
+      persistedUsername = result.tandemUsername || '';
+      const input = document.getElementById('username-input');
+      if (input) {
+        input.value = persistedUsername;
+      }
+      resolve(persistedUsername);
+    });
+  });
+}
+
+async function saveUsername() {
+  const input = document.getElementById('username-input');
+  const username = input.value.trim();
+  persistedUsername = username;
+  
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ tandemUsername: username }, () => {
+      const btn = document.getElementById('save-username-btn');
+      if (btn) {
+        btn.textContent = '✓ Saved';
+        setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+      }
+      resolve(username);
+    });
+  });
+}
+
 const statusEl = document.getElementById('status');
 const statusText = document.getElementById('status-text');
 const controlsSection = document.getElementById('controls-section');
+const joinSection = document.getElementById('join-section');
 const partyInfo = document.getElementById('party-info');
 const statsSection = document.getElementById('stats-section');
 const videoSection = document.getElementById('video-section');
@@ -10,6 +44,9 @@ const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const resetBtn = document.getElementById('reset-btn');
 const shareLinkEl = document.getElementById('share-link');
+const roomCodeDisplay = document.getElementById('room-code-display');
+const roomCodeInput = document.getElementById('room-code-input');
+const joinRoomBtn = document.getElementById('join-room-btn');
 const userDisplay = document.getElementById('user-display');
 const localTimeEl = document.getElementById('local-time');
 const syncStatusEl = document.getElementById('sync-status');
@@ -17,6 +54,8 @@ const remoteUsersList = document.getElementById('remote-users-list');
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
 const copyLinkBtn = document.getElementById('copy-link-btn');
+const copyCodeBtn = document.getElementById('copy-code-btn');
+const saveUsernameBtn = document.getElementById('save-username-btn');
 const serverUrlEl = document.getElementById('server-url');
 
 // Import and display server URL from config
@@ -29,9 +68,12 @@ import('../config.js').then(({ CONFIG }) => {
   console.warn('[Popup] Could not load config:', err);
 });
 
-updateStatus();
-setupEventListeners();
-startStatusPolling();
+// Load username and initialize
+loadUsername().then(() => {
+  updateStatus();
+  setupEventListeners();
+  startStatusPolling();
+});
 
 let lastShareLinkRoomId = null;
 let lastShareLink = null;
@@ -79,6 +121,9 @@ function updateShareLink() {
   if (!shareLinkEl || !status.roomId) return;
   if (status.roomId === lastShareLinkRoomId && lastShareLink) {
     shareLinkEl.textContent = lastShareLink;
+    if (roomCodeDisplay && lastShortId) {
+      roomCodeDisplay.textContent = lastShortId;
+    }
     return;
   }
 
@@ -86,7 +131,54 @@ function updateShareLink() {
     lastShareLinkRoomId = status.roomId;
     lastShareLink = link;
     shareLinkEl.textContent = link;
+    // Extract short ID from link
+    const match = link.match(/\/room\/([a-z0-9]+)$/i);
+    if (match && roomCodeDisplay) {
+      lastShortId = match[1];
+      roomCodeDisplay.textContent = lastShortId;
+    }
   });
+}
+
+async function joinRoomByCode() {
+  const code = roomCodeInput.value.trim();
+  if (!code) {
+    alert('Please enter a room code');
+    return;
+  }
+  
+  joinRoomBtn.disabled = true;
+  try {
+    // Get the server URL from config
+    const config = await import('../config.js').then(m => m.CONFIG);
+    const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
+    
+    // Look up the roomId from the short code
+    const response = await fetch(`${serverUrl}/api/room/${encodeURIComponent(code)}`);
+    if (!response.ok) {
+      alert('Room code not found. Please check and try again.');
+      joinRoomBtn.disabled = false;
+      return;
+    }
+    
+    const data = await response.json();
+    const roomId = data.roomId;
+    
+    // Start party with the retrieved roomId and username
+    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: persistedUsername }, (response) => {
+      joinRoomBtn.disabled = false;
+      if (response && response.success) {
+        roomCodeInput.value = '';
+        setTimeout(updateStatus, 500);
+      } else {
+        alert('Error: ' + (response && response.error ? response.error : 'Failed to join party'));
+      }
+    });
+  } catch (err) {
+    console.error('[Popup] Error joining room:', err);
+    alert('Failed to join room: ' + err.message);
+    joinRoomBtn.disabled = false;
+  }
 }
 
 function setupEventListeners() {
@@ -95,6 +187,35 @@ function setupEventListeners() {
   resetBtn.addEventListener('click', resetParty);
   if (copyLinkBtn) {
     copyLinkBtn.addEventListener('click', copyShareLink);
+  }
+  if (copyCodeBtn) {
+    copyCodeBtn.addEventListener('click', () => {
+      if (!lastShortId) return;
+      navigator.clipboard.writeText(lastShortId);
+      copyCodeBtn.textContent = '✓';
+      setTimeout(() => { copyCodeBtn.textContent = 'Copy'; }, 1500);
+    });
+  }
+  if (joinRoomBtn) {
+    joinRoomBtn.addEventListener('click', joinRoomByCode);
+  }
+  if (roomCodeInput) {
+    roomCodeInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        joinRoomByCode();
+      }
+    });
+  }
+  if (saveUsernameBtn) {
+    saveUsernameBtn.addEventListener('click', saveUsername);
+  }
+  const usernameInput = document.getElementById('username-input');
+  if (usernameInput) {
+    usernameInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        saveUsername();
+      }
+    });
   }
 }
 
@@ -114,18 +235,23 @@ function updateUI() {
     statusEl.className = 'status connected';
     statusText.textContent = '🟢 Connected';
     controlsSection.classList.remove('hidden');
+    joinSection.classList.add('hidden');
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
     resetBtn.classList.remove('hidden');
     partyInfo.classList.remove('hidden');
     statsSection.classList.remove('hidden');
-    userDisplay.textContent = userId;
+    
+    // Display username if set, otherwise show userId
+    const displayName = persistedUsername || userId;
+    userDisplay.textContent = displayName;
     updateShareLink();
     updateStats();
   } else {
     statusEl.className = 'status disconnected';
     statusText.textContent = '🔴 Disconnected';
     controlsSection.classList.remove('hidden');
+    joinSection.classList.remove('hidden');
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
     resetBtn.classList.add('hidden');
@@ -140,7 +266,7 @@ function updateUI() {
 async function startParty() {
   startBtn.disabled = true;
   statusText.textContent = '⏳ Connecting...';
-  chrome.runtime.sendMessage({ type: 'START_PARTY' }, (response) => {
+  chrome.runtime.sendMessage({ type: 'START_PARTY', username: persistedUsername }, (response) => {
     if (response.success) {
       setTimeout(updateStatus, 500);
     } else {
@@ -161,7 +287,7 @@ function resetParty() {
   resetBtn.disabled = true;
   statusText.textContent = '♻️ Resetting...';
   chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
-    chrome.runtime.sendMessage({ type: 'START_PARTY' }, (response) => {
+    chrome.runtime.sendMessage({ type: 'START_PARTY', username: persistedUsername }, (response) => {
       resetBtn.disabled = false;
       if (response && response.success) {
         setTimeout(updateStatus, 500);

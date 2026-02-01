@@ -7,6 +7,7 @@ export class BackgroundService {
     this.isConnected = false;
     this.roomId = null;
     this.userId = this.generateUserId();
+    this.username = null; // Store the display username
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = CONFIG.WS.MAX_RECONNECT_ATTEMPTS;
     this.reconnectTimer = null;
@@ -22,8 +23,9 @@ export class BackgroundService {
     return 'user_' + Math.random().toString(36).substr(2, 9);
   }
 
-  async startParty(inputRoomId) {
+  async startParty(inputRoomId, inputUsername) {
     this.roomId = inputRoomId || 'default_room_' + Date.now();
+    this.username = inputUsername || null; // Store username if provided
     this.intentionalDisconnect = false; // Reset flag so reconnection works
     return new Promise((resolve, reject) => {
       try {
