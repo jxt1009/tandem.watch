@@ -120,11 +120,24 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
         return;
       }
 
-      // If server returns a default timestamp (0) but local playback has progress,
-      // prefer local progress to avoid resetting resume positions.
+      // If server returns a default timestamp (0), wait briefly for Netflix resume
+      // and prefer local progress to avoid resetting watch history.
       if (fromUserId === 'server' && currentTime <= 1) {
         try {
-          const localTimeMs = await netflix.getCurrentTime();
+          const waitForLocalResume = async () => {
+            const attempts = 8;
+            const delayMs = 500;
+            for (let i = 0; i < attempts; i++) {
+              const localTimeMs = await netflix.getCurrentTime();
+              if (localTimeMs != null && localTimeMs > 5000) {
+                return localTimeMs;
+              }
+              await new Promise(r => setTimeout(r, delayMs));
+            }
+            return null;
+          };
+
+          const localTimeMs = await waitForLocalResume();
           if (localTimeMs != null && localTimeMs > 5000) {
             const localPaused = await netflix.isPaused();
             const localSeconds = localTimeMs / 1000;
