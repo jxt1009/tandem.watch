@@ -352,17 +352,18 @@ wss.on('connection', (ws, req) => {
       else if (type === 'PLAY_PAUSE') {
         if (!roomId) return;
 
-        const control = data.control === 'play';
+        const control = data.control; // 'play' | 'pause'
+        const isPlaying = control === 'play';
         const currentTime = data.currentTime || 0;
 
         await RoomRepository.update(roomId, {
-          isPlaying: control,
+          isPlaying,
           currentTime,
         });
 
         if (userId) {
           await UserRepository.update(userId, {
-            isPlaying: control,
+            isPlaying,
             currentTime,
           });
         }
