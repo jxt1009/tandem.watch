@@ -85,6 +85,37 @@ const handleLeaveWatch = () => {
 const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch);
 console.log('[Content Script] Managers initialized');
 
+function checkJoinFromLink() {
+  const state = stateManager.getState();
+  if (state.partyActive) {
+    return;
+  }
+
+  try {
+    const url = new URL(window.location.href);
+    const roomId = url.searchParams.get('tandemRoom');
+    if (!roomId) {
+      return;
+    }
+
+    console.log('[Content Script] Found tandemRoom in URL, joining room:', roomId);
+
+    // Clean the URL so it doesn't keep re-triggering
+    url.searchParams.delete('tandemRoom');
+    history.replaceState({}, document.title, url.toString());
+
+    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId }, (response) => {
+      if (response && response.success) {
+        console.log('[Content Script] Joined party from link successfully');
+      } else {
+        console.error('[Content Script] Failed to join party from link:', response ? response.error : 'Unknown error');
+      }
+    });
+  } catch (e) {
+    console.error('[Content Script] Failed to process tandemRoom in URL:', e);
+  }
+}
+
 let localStream = null;
 let videoElementMonitor = null;
 
@@ -143,6 +174,8 @@ function stopVideoElementMonitoring() {
     console.log('[Content Script] Stopped video element monitoring');
   }
 }
+
+checkJoinFromLink();
 
 (function checkRestorePartyState() {
   const restorationState = urlSync.getRestorationState();

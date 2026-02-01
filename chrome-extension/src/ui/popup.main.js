@@ -9,15 +9,14 @@ const videoSection = document.getElementById('video-section');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const resetBtn = document.getElementById('reset-btn');
-const roomInput = document.getElementById('room-input');
-const roomDisplay = document.getElementById('room-display');
+const shareLinkEl = document.getElementById('share-link');
 const userDisplay = document.getElementById('user-display');
 const localTimeEl = document.getElementById('local-time');
 const syncStatusEl = document.getElementById('sync-status');
 const remoteUsersList = document.getElementById('remote-users-list');
 const localVideo = document.getElementById('local-video');
 const remoteVideo = document.getElementById('remote-video');
-const copyRoomBtn = document.getElementById('copy-room-btn');
+const copyLinkBtn = document.getElementById('copy-link-btn');
 const serverUrlEl = document.getElementById('server-url');
 
 // Import and display server URL from config
@@ -34,11 +33,55 @@ updateStatus();
 setupEventListeners();
 startStatusPolling();
 
+let lastShareLinkRoomId = null;
+let lastShareLink = null;
+
+function buildShareLink(roomId) {
+  return new Promise((resolve) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const fallbackUrl = 'https://www.netflix.com/browse';
+      let targetUrl = fallbackUrl;
+
+      const tabUrl = tabs && tabs[0] ? tabs[0].url : null;
+      if (tabUrl && tabUrl.startsWith('http')) {
+        targetUrl = tabUrl;
+      }
+
+      try {
+        let url = new URL(targetUrl);
+        if (!url.hostname.endsWith('netflix.com')) {
+          url = new URL(fallbackUrl);
+        }
+        url.searchParams.set('tandemRoom', roomId);
+        resolve(url.toString());
+      } catch (e) {
+        resolve(`${fallbackUrl}?tandemRoom=${encodeURIComponent(roomId)}`);
+      }
+    });
+  });
+}
+
+function updateShareLink() {
+  if (!shareLinkEl || !status.roomId) return;
+  if (status.roomId === lastShareLinkRoomId && lastShareLink) {
+    shareLinkEl.textContent = lastShareLink;
+    return;
+  }
+
+  buildShareLink(status.roomId).then((link) => {
+    lastShareLinkRoomId = status.roomId;
+    lastShareLink = link;
+    shareLinkEl.textContent = link;
+  });
+}
+
 function setupEventListeners() {
   startBtn.addEventListener('click', startParty);
   stopBtn.addEventListener('click', stopParty);
   resetBtn.addEventListener('click', resetParty);
-  copyRoomBtn.addEventListener('click', copyRoomId);
+  if (copyLinkBtn) {
+    copyLinkBtn.addEventListener('click', copyShareLink);
+  }
 }
 
 function updateStatus() {
@@ -62,8 +105,8 @@ function updateUI() {
     resetBtn.classList.remove('hidden');
     partyInfo.classList.remove('hidden');
     statsSection.classList.remove('hidden');
-    roomDisplay.textContent = roomId;
     userDisplay.textContent = userId;
+    updateShareLink();
     updateStats();
   } else {
     statusEl.className = 'status disconnected';
@@ -81,10 +124,9 @@ function updateUI() {
 }
 
 async function startParty() {
-  const roomId = roomInput.value.trim() || undefined;
   startBtn.disabled = true;
   statusText.textContent = '⏳ Connecting...';
-  chrome.runtime.sendMessage({ type: 'START_PARTY', roomId }, (response) => {
+  chrome.runtime.sendMessage({ type: 'START_PARTY' }, (response) => {
     if (response.success) {
       setTimeout(updateStatus, 500);
     } else {
@@ -97,17 +139,15 @@ async function startParty() {
 
 function stopParty() {
   chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
-    roomInput.value = '';
     updateStatus();
   });
 }
 
 function resetParty() {
-  const desiredRoomId = roomInput.value.trim() || status.roomId || undefined;
   resetBtn.disabled = true;
   statusText.textContent = '♻️ Resetting...';
   chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
-    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId: desiredRoomId }, (response) => {
+    chrome.runtime.sendMessage({ type: 'START_PARTY' }, (response) => {
       resetBtn.disabled = false;
       if (response && response.success) {
         setTimeout(updateStatus, 500);
@@ -119,12 +159,15 @@ function resetParty() {
   });
 }
 
-function copyRoomId() {
-  if (status.roomId) {
-    navigator.clipboard.writeText(status.roomId);
-    copyRoomBtn.textContent = '✓';
-    setTimeout(() => { copyRoomBtn.textContent = '📋'; }, 2000);
-  }
+function copyShareLink() {
+  if (!status.roomId) return;
+  buildShareLink(status.roomId).then((link) => {
+    navigator.clipboard.writeText(link);
+    if (copyLinkBtn) {
+      copyLinkBtn.textContent = '✓';
+      setTimeout(() => { copyLinkBtn.textContent = 'Copy'; }, 2000);
+    }
+  });
 }
 
 const formatTime = (seconds) => {
