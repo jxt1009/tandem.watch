@@ -11,10 +11,10 @@ export const CONFIG = {
   // WebSocket server configuration
   WS: {
     // Production server (HTTPS)
-    // URL: 'wss://watch.toper.dev/ws',
+    URL: 'wss://watch.toper.dev/ws',
     
-    // Kubernetes deployment (HTTP via NodePort)
-    URL: 'ws://10.0.0.102:30401/ws',
+    // Kubernetes deployment (HTTP via NodePort) - for local network testing
+    // URL: 'ws://10.0.0.102:30401/ws',
     
     // Local development (HTTP)
     // URL: 'ws://localhost:4001/ws',
