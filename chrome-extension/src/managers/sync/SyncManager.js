@@ -106,55 +106,89 @@ export class SyncManager {
         this.isInitializedRef.set(true);
         this.initialSyncRequestAt = 0;
         
-        // Wait for video to be ready before broadcasting state
-        const broadcastLeaderState = async () => {
-          try {
-            const currentTime = await this.netflix.getCurrentTime();
-            const isPaused = await this.netflix.isPaused();
-            if (currentTime != null) {
-              const currentTimeSeconds = currentTime / 1000;
-              console.log('[SyncManager] Video ready - broadcasting initial state as leader:', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing');
+        // Wait for Netflix resume event before broadcasting state
+        const broadcastAfterResume = () => {
+          let resumed = false;
+          let timeoutId = null;
+          
+          const broadcast = async (source) => {
+            if (resumed) return;
+            resumed = true;
+            
+            // Clean up listeners
+            video.removeEventListener('seeked', onSeeked);
+            video.removeEventListener('timeupdate', onTimeUpdate);
+            if (timeoutId) clearTimeout(timeoutId);
+            
+            try {
+              const currentTime = await this.netflix.getCurrentTime();
+              const isPaused = await this.netflix.isPaused();
+              const currentTimeSeconds = currentTime != null ? currentTime / 1000 : 0;
+              console.log('[SyncManager] Broadcasting initial state as leader from', source + ':', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing');
               
-              // Broadcast our current state
-              if (isPaused) {
-                this.state.safeSendMessage({ 
-                  type: 'PLAY_PAUSE', 
-                  control: 'pause', 
-                  currentTime: currentTimeSeconds 
-                });
-              } else {
-                this.state.safeSendMessage({ 
-                  type: 'PLAY_PAUSE', 
-                  control: 'play', 
-                  currentTime: currentTimeSeconds 
-                });
-              }
+              this.state.safeSendMessage({ 
+                type: 'PLAY_PAUSE', 
+                control: isPaused ? 'pause' : 'play', 
+                currentTime: currentTimeSeconds 
+              });
+            } catch (e) {
+              console.error('[SyncManager] Error broadcasting leader state:', e);
             }
-          } catch (e) {
-            console.error('[SyncManager] Error broadcasting leader state:', e);
-          }
+          };
+          
+          // Listen for seeked event (Netflix resuming to saved position)
+          const onSeeked = async () => {
+            const currentTime = await this.netflix.getCurrentTime();
+            if (currentTime != null && currentTime > 5000) {
+              console.log('[SyncManager] Detected resume via seeked event at', (currentTime / 1000).toFixed(2) + 's');
+              broadcast('seeked');
+            }
+          };
+          
+          // Listen for timeupdate as fallback
+          const onTimeUpdate = async () => {
+            const currentTime = await this.netflix.getCurrentTime();
+            if (currentTime != null && currentTime > 5000) {
+              console.log('[SyncManager] Detected resume via timeupdate at', (currentTime / 1000).toFixed(2) + 's');
+              broadcast('timeupdate');
+            }
+          };
+          
+          video.addEventListener('seeked', onSeeked);
+          video.addEventListener('timeupdate', onTimeUpdate);
+          
+          // Fallback timeout (8 seconds)
+          timeoutId = setTimeout(() => {
+            console.log('[SyncManager] Resume timeout reached, broadcasting current state');
+            broadcast('timeout');
+          }, 8000);
+          
+          // Check immediately if already at resume position
+          this.netflix.getCurrentTime().then(currentTime => {
+            if (currentTime != null && currentTime > 5000) {
+              console.log('[SyncManager] Already at resume position:', (currentTime / 1000).toFixed(2) + 's');
+              broadcast('immediate');
+            }
+          });
         };
         
-        // Listen for video ready event (canplay fires when video has buffered enough to play)
-        const onVideoReady = () => {
-          console.log('[SyncManager] Video canplay event fired');
-          video.removeEventListener('canplay', onVideoReady);
-          broadcastLeaderState();
-        };
-        
-        // If video is already ready, broadcast immediately
-        if (video.readyState >= 3) { // HAVE_FUTURE_DATA or better
-          console.log('[SyncManager] Video already ready (readyState:', video.readyState + ')');
-          broadcastLeaderState();
+        // Start waiting for resume
+        if (video.readyState >= 3) {
+          console.log('[SyncManager] Video ready, waiting for Netflix resume event');
+          broadcastAfterResume();
         } else {
-          console.log('[SyncManager] Waiting for video to be ready (readyState:', video.readyState + ')');
+          console.log('[SyncManager] Waiting for video ready before resume detection');
+          const onVideoReady = () => {
+            video.removeEventListener('canplay', onVideoReady);
+            console.log('[SyncManager] Video ready, waiting for Netflix resume event');
+            broadcastAfterResume();
+          };
           video.addEventListener('canplay', onVideoReady);
-          // Fallback timeout in case canplay never fires
           setTimeout(() => {
             video.removeEventListener('canplay', onVideoReady);
-            console.log('[SyncManager] Timeout reached, broadcasting anyway');
-            broadcastLeaderState();
-          }, 5000);
+            console.log('[SyncManager] Video ready timeout, starting resume detection anyway');
+            broadcastAfterResume();
+          }, 3000);
         }
       } else {
         // Wait for video to be ready before requesting sync
