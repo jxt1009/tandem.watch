@@ -33,47 +33,81 @@ async function saveUsername() {
   });
 }
 
-const statusEl = document.getElementById('status');
-const statusText = document.getElementById('status-text');
-const controlsSection = document.getElementById('controls-section');
-const joinSection = document.getElementById('join-section');
-const partyInfo = document.getElementById('party-info');
-const statsSection = document.getElementById('stats-section');
-const videoSection = document.getElementById('video-section');
-const startBtn = document.getElementById('start-btn');
-const stopBtn = document.getElementById('stop-btn');
-const resetBtn = document.getElementById('reset-btn');
-const shareLinkEl = document.getElementById('share-link');
-const roomCodeDisplay = document.getElementById('room-code-display');
-const roomCodeInput = document.getElementById('room-code-input');
-const joinRoomBtn = document.getElementById('join-room-btn');
-const userDisplay = document.getElementById('user-display');
-const localTimeEl = document.getElementById('local-time');
-const syncStatusEl = document.getElementById('sync-status');
-const remoteUsersList = document.getElementById('remote-users-list');
-const localVideo = document.getElementById('local-video');
-const remoteVideo = document.getElementById('remote-video');
-const copyLinkBtn = document.getElementById('copy-link-btn');
-const copyCodeBtn = document.getElementById('copy-code-btn');
-const saveUsernameBtn = document.getElementById('save-username-btn');
-const serverUrlEl = document.getElementById('server-url');
+// Cache DOM elements
+let statusEl, statusText, controlsSection, joinSection, partyInfo, statsSection, videoSection;
+let startBtn, stopBtn, resetBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
+let userDisplay, localTimeEl, syncStatusEl, remoteUsersList, localVideo, remoteVideo;
+let copyLinkBtn, copyCodeBtn, saveUsernameBtn, serverUrlEl;
+
+function initializeDOMElements() {
+  statusEl = document.getElementById('status');
+  statusText = document.getElementById('status-text');
+  controlsSection = document.getElementById('controls-section');
+  joinSection = document.getElementById('join-section');
+  partyInfo = document.getElementById('party-info');
+  statsSection = document.getElementById('stats-section');
+  videoSection = document.getElementById('video-section');
+  startBtn = document.getElementById('start-btn');
+  stopBtn = document.getElementById('stop-btn');
+  resetBtn = document.getElementById('reset-btn');
+  shareLinkEl = document.getElementById('share-link');
+  roomCodeDisplay = document.getElementById('room-code-display');
+  roomCodeInput = document.getElementById('room-code-input');
+  joinRoomBtn = document.getElementById('join-room-btn');
+  userDisplay = document.getElementById('user-display');
+  localTimeEl = document.getElementById('local-time');
+  syncStatusEl = document.getElementById('sync-status');
+  remoteUsersList = document.getElementById('remote-users-list');
+  localVideo = document.getElementById('local-video');
+  remoteVideo = document.getElementById('remote-video');
+  copyLinkBtn = document.getElementById('copy-link-btn');
+  copyCodeBtn = document.getElementById('copy-code-btn');
+  saveUsernameBtn = document.getElementById('save-username-btn');
+  serverUrlEl = document.getElementById('server-url');
+}
 
 // Import and display server URL from config
 import('../config.js').then(({ CONFIG }) => {
-  if (serverUrlEl) {
-    serverUrlEl.textContent = CONFIG.WS.URL;
-  }
   console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
 }).catch(err => {
   console.warn('[Popup] Could not load config:', err);
 });
 
-// Load username and initialize
-loadUsername().then(() => {
-  updateStatus();
-  setupEventListeners();
-  startStatusPolling();
-});
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    initializeDOMElements();
+        import('../config.js').then(({ CONFIG }) => {
+          if (serverUrlEl) {
+            serverUrlEl.textContent = CONFIG.WS.URL;
+          }
+          console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
+        }).catch(err => {
+          console.warn('[Popup] Could not load config:', err);
+        });
+    loadUsername().then(() => {
+      updateStatus();
+      setupEventListeners();
+      startStatusPolling();
+    });
+  });
+} else {
+  // DOM is already loaded
+    import('../config.js').then(({ CONFIG }) => {
+      if (serverUrlEl) {
+        serverUrlEl.textContent = CONFIG.WS.URL;
+      }
+      console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
+    }).catch(err => {
+      console.warn('[Popup] Could not load config:', err);
+    });
+  initializeDOMElements();
+  loadUsername().then(() => {
+    updateStatus();
+    setupEventListeners();
+    startStatusPolling();
+  });
+}
 
 let lastShareLinkRoomId = null;
 let lastShareLink = null;
