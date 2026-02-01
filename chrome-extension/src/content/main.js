@@ -228,6 +228,65 @@ checkJoinFromLink();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Content Script] Received message:', request.type);
+  if (request.type === 'GET_MEDIA_STATE') {
+    const audioTrack = localStream ? localStream.getAudioTracks()[0] : null;
+    const videoTrack = localStream ? localStream.getVideoTracks()[0] : null;
+    sendResponse({
+      success: true,
+      state: {
+        audioEnabled: audioTrack ? audioTrack.enabled : false,
+        videoEnabled: videoTrack ? videoTrack.enabled : false,
+        hasStream: !!localStream,
+      },
+    });
+    return true;
+  }
+
+  if (request.type === 'TOGGLE_MIC') {
+    if (!localStream) {
+      sendResponse({ success: false, error: 'No local stream' });
+      return true;
+    }
+    const tracks = localStream.getAudioTracks();
+    if (!tracks.length) {
+      sendResponse({ success: false, error: 'No audio track' });
+      return true;
+    }
+    const newEnabled = !tracks[0].enabled;
+    tracks.forEach(t => { t.enabled = newEnabled; });
+    sendResponse({
+      success: true,
+      state: {
+        audioEnabled: newEnabled,
+        videoEnabled: localStream.getVideoTracks()[0]?.enabled ?? false,
+        hasStream: true,
+      },
+    });
+    return true;
+  }
+
+  if (request.type === 'TOGGLE_CAMERA') {
+    if (!localStream) {
+      sendResponse({ success: false, error: 'No local stream' });
+      return true;
+    }
+    const tracks = localStream.getVideoTracks();
+    if (!tracks.length) {
+      sendResponse({ success: false, error: 'No video track' });
+      return true;
+    }
+    const newEnabled = !tracks[0].enabled;
+    tracks.forEach(t => { t.enabled = newEnabled; });
+    sendResponse({
+      success: true,
+      state: {
+        audioEnabled: localStream.getAudioTracks()[0]?.enabled ?? false,
+        videoEnabled: newEnabled,
+        hasStream: true,
+      },
+    });
+    return true;
+  }
   if (request.type === 'REQUEST_MEDIA_STREAM') {
     console.log('[Content Script] Processing REQUEST_MEDIA_STREAM');
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
@@ -252,9 +311,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'PARTY_STARTED') {
     console.log('[Content Script] Party started:', request.userId, request.roomId);
     stateManager.startParty(request.userId, request.roomId);
-    
-    // Show "Waiting for others..." placeholder immediately
-    webrtcManager.showWaitingIndicator();
     
     // Show simple connection indicator
     uiManager.showConnectionIndicator();

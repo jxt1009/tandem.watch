@@ -12,37 +12,22 @@
       <h1>🎬 tandem.watch</h1>
     </div>
 
-    <div id="username-section" class="section">
-      <div class="info-item">
-        <span class="label">Username:</span>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <input id="username-input" type="text" placeholder="Enter username" class="input-field" maxlength="20" />
-          <button id="save-username-btn" class="button secondary" style="padding: 6px 12px; font-size: 12px;">Save</button>
-        </div>
-      </div>
-    </div>
-
-    <div id="status-section" class="section">
-      <div id="status" class="status disconnected">
+    <div id="status-controls" class="section compact">
+      <div id="status" class="status disconnected status-minimal hidden">
         <span id="status-text">Disconnected</span>
       </div>
-    </div>
-
-    <div id="controls-section" class="section">
-      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-        <button id="start-btn" class="button primary" style="flex: 1;">Start Party</button>
-        <button id="stop-btn" class="button danger hidden" style="flex: 1;">Stop Party</button>
+      <div class="compact-actions">
+        <button id="start-btn" class="button primary compact start-primary" style="flex: 1;">Start Party</button>
+        <button id="stop-btn" class="button danger hidden compact" style="flex: 1;">Stop Party</button>
+        <button id="reset-btn" class="button secondary hidden compact" style="flex: 1;">Reset Party</button>
       </div>
-      <button id="reset-btn" class="button secondary hidden" style="width: 100%;">Reset Party</button>
     </div>
 
-    <div id="join-section" class="section">
-      <div style="border-top: 1px solid #ddd; padding-top: 12px; margin-top: 12px;">
-        <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">Already have a room code?</p>
-        <div style="display: flex; gap: 8px;">
-          <input id="room-code-input" type="text" placeholder="Enter code (e.g., a939jfa)" class="input-field" maxlength="10" />
-          <button id="join-room-btn" class="button secondary" style="white-space: nowrap;">Join</button>
-        </div>
+    <div id="join-section" class="section compact">
+      <div class="compact-join">
+        <span class="join-label">Have a code?</span>
+        <input id="room-code-input" type="text" placeholder="Enter code" class="input-field compact" maxlength="10" />
+        <button id="join-room-btn" class="button secondary compact" style="white-space: nowrap;">Join</button>
       </div>
     </div>
 
@@ -59,11 +44,18 @@
       </div>
       <div class="info-item">
         <span class="label">Your ID:</span>
-        <span id="user-display" class="value"></span>
+        <div id="username-container" class="username-container">
+          <span id="user-display" class="value username-label" title="Click to edit"></span>
+          <button id="edit-username-btn" class="icon-button compact-icon" aria-label="Edit username" title="Edit username">✎</button>
+          <button id="save-username-btn" class="icon-button compact-icon hidden" aria-label="Save username" title="Save username">✓</button>
+        </div>
       </div>
       <div class="info-item">
         <span class="label">Webcam/Mic:</span>
-        <span id="media-status" class="value">Streaming</span>
+        <div class="media-buttons">
+          <button id="toggle-mic-btn" class="icon-button toggle-btn" aria-label="Mute mic" title="Mute mic">🎤</button>
+          <button id="toggle-video-btn" class="icon-button toggle-btn" aria-label="Turn off camera" title="Turn off camera">📷</button>
+        </div>
       </div>
     </div>
 
@@ -96,7 +88,7 @@
     </div>
 
     <div class="footer">
-      <p>Connected to: <strong id="server-url">ws://10.0.0.102:30401/ws</strong></p>
+      <p>Made with ❤️ in California. <strong id="server-url"><a href="https://buymeacoffee.com/signup">Buy me a coffee!</a></strong></p>
     </div>
   </div>
 

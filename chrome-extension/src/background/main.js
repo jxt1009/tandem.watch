@@ -77,6 +77,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.type === 'UPDATE_USERNAME') {
+    backgroundService.updateUsername(request.username);
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (request.type === 'PLAY_PAUSE') {
     console.log('[Background] Broadcasting PLAY_PAUSE:', request.control, 'at', request.currentTime);
     backgroundService.broadcastMessage({
@@ -175,6 +181,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'Not connected to signaling server' });
     }
+    return true;
+  }
+
+  if (request.type === 'OPEN_POPUP') {
+    chrome.action.openPopup();
     return true;
   }
 });

@@ -17,6 +17,8 @@ export class BackgroundService {
     this.missedHeartbeats = 0;
     this.reconnectDelayMs = CONFIG.WS.RECONNECT_DELAY_MS;
     this.wsUrl = CONFIG.WS.URL;
+    this.statusMonitorInterval = null;
+    this.lastKnownUserCount = 0;
   }
 
   generateUserId() {
@@ -73,15 +75,17 @@ export class BackgroundService {
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.missedHeartbeats = 0;
-        this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, timestamp: Date.now() }));
+        this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, username: this.username || null, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
             chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId }).catch(() => {});
             chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_INITIAL_SYNC_AND_PLAY' }).catch(() => {});
-            chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'connected' }).catch(() => {});
+            // Start with "waiting" status - will update when others join
+            chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'waiting' }).catch(() => {});
           });
         });
         this.startHeartbeat();
+        this.startStatusMonitor();
         resolve();
       };
       this.ws.onmessage = (event) => this.handleSignalingMessage(event.data);
@@ -114,6 +118,7 @@ export class BackgroundService {
   stopParty(sendLeaveSignal = true) {
     this.intentionalDisconnect = true;
     this.stopHeartbeat();
+    this.stopStatusMonitor();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -315,6 +320,19 @@ export class BackgroundService {
     }
   }
 
+  updateUsername(username) {
+    this.username = username || this.username;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.roomId) {
+      this.ws.send(JSON.stringify({
+        type: 'UPDATE_USERNAME',
+        userId: this.userId,
+        roomId: this.roomId,
+        username: this.username,
+        timestamp: Date.now(),
+      }));
+    }
+  }
+
   startHeartbeat() {
     this.stopHeartbeat();
     console.log('[BackgroundService] Starting heartbeat monitoring');
@@ -359,6 +377,50 @@ export class BackgroundService {
       this.heartbeatTimeout = null;
     }
     this.missedHeartbeats = 0;
+  }
+
+  startStatusMonitor() {
+    if (this.statusMonitorInterval) {
+      clearInterval(this.statusMonitorInterval);
+    }
+    
+    this.statusMonitorInterval = setInterval(async () => {
+      if (!this.isConnected || !this.roomId) return;
+      
+      try {
+        const httpUrl = this.wsUrl.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
+        const response = await fetch(`${httpUrl}/status`);
+        if (!response.ok) return;
+        
+        const serverStatus = await response.json();
+        const room = serverStatus.rooms?.find(r => r.roomId === this.roomId);
+        if (!room) return;
+        
+        const userCount = room.users?.length || 0;
+        
+        // Update status if user count changed
+        if (userCount !== this.lastKnownUserCount) {
+          this.lastKnownUserCount = userCount;
+          const newStatus = userCount > 1 ? 'connected' : 'waiting';
+          
+          chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+            tabs.forEach(tab => {
+              chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: newStatus }).catch(() => {});
+            });
+          });
+        }
+      } catch (error) {
+        console.error('[BackgroundService] Error monitoring status:', error);
+      }
+    }, 2000);
+  }
+
+  stopStatusMonitor() {
+    if (this.statusMonitorInterval) {
+      clearInterval(this.statusMonitorInterval);
+      this.statusMonitorInterval = null;
+    }
+    this.lastKnownUserCount = 0;
   }
 
   getStatus() {

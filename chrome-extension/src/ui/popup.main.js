@@ -5,43 +5,81 @@ let persistedUsername = null;
 
 async function loadUsername() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(['tandemUsername'], (result) => {
-      persistedUsername = result.tandemUsername || '';
-      const input = document.getElementById('username-input');
-      if (input) {
-        input.value = persistedUsername;
-      }
-      resolve(persistedUsername);
-    });
+    if (chrome?.storage?.local) {
+      chrome.storage.local.get(['tandemUsername'], (result) => {
+        persistedUsername = result.tandemUsername || '';
+        if (!persistedUsername) {
+          persistedUsername = generateDefaultUsername();
+          chrome.storage.local.set({ tandemUsername: persistedUsername }, () => {});
+        }
+        // Only update label if not currently being edited
+        if (usernameLabel && usernameLabel.contentEditable !== 'true') {
+          usernameLabel.textContent = persistedUsername;
+        }
+        resolve(persistedUsername);
+      });
+      return;
+    }
+
+    const stored = localStorage.getItem('tandemUsername') || '';
+    persistedUsername = stored || generateDefaultUsername();
+    localStorage.setItem('tandemUsername', persistedUsername);
+    // Only update label if not currently being edited
+    if (usernameLabel && usernameLabel.contentEditable !== 'true') {
+      usernameLabel.textContent = persistedUsername;
+    }
+    resolve(persistedUsername);
   });
 }
 
+function generateDefaultUsername() {
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `user-${suffix}`;
+}
+
 async function saveUsername() {
-  const input = document.getElementById('username-input');
-  const username = input.value.trim();
-  persistedUsername = username;
+  const finalUsername = (usernameLabel?.textContent || '').trim() || generateDefaultUsername();
+  persistedUsername = finalUsername;
   
   return new Promise((resolve) => {
-    chrome.storage.local.set({ tandemUsername: username }, () => {
-      const btn = document.getElementById('save-username-btn');
-      if (btn) {
-        btn.textContent = '✓ Saved';
-        setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+    const onSaved = () => {
+      if (saveUsernameBtn) {
+        saveUsernameBtn.classList.add('hidden');
       }
-      resolve(username);
-    });
+      if (editUsernameBtn) {
+        editUsernameBtn.classList.remove('hidden');
+      }
+      if (usernameLabel) {
+        usernameLabel.contentEditable = 'false';
+        usernameLabel.textContent = finalUsername;
+      }
+      chrome.runtime.sendMessage({ type: 'UPDATE_USERNAME', username: finalUsername }, () => {});
+      resolve(finalUsername);
+    };
+
+    if (chrome?.storage?.local) {
+      chrome.storage.local.set({ tandemUsername: finalUsername }, onSaved);
+      return;
+    }
+
+    localStorage.setItem('tandemUsername', finalUsername);
+    onSaved();
   });
 }
 
 // Cache DOM elements
-let statusEl, statusText, controlsSection, joinSection, partyInfo, statsSection, videoSection;
+let statusEl, statusText, statusControls, controlsSection, joinSection, partyInfo, statsSection, videoSection;
 let startBtn, stopBtn, resetBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
 let userDisplay, localTimeEl, syncStatusEl, remoteUsersList, localVideo, remoteVideo;
 let copyLinkBtn, copyCodeBtn, saveUsernameBtn, serverUrlEl;
+let usernameLabel, usernameContainer, editUsernameBtn;
+let toggleMicBtn, toggleVideoBtn;
+let listenersBound = false;
 
 function initializeDOMElements() {
   statusEl = document.getElementById('status');
   statusText = document.getElementById('status-text');
+  statusControls = document.getElementById('status-controls');
   controlsSection = document.getElementById('controls-section');
   joinSection = document.getElementById('join-section');
   partyInfo = document.getElementById('party-info');
@@ -64,6 +102,11 @@ function initializeDOMElements() {
   copyCodeBtn = document.getElementById('copy-code-btn');
   saveUsernameBtn = document.getElementById('save-username-btn');
   serverUrlEl = document.getElementById('server-url');
+  usernameLabel = document.getElementById('user-display');
+  usernameContainer = document.getElementById('username-container');
+  editUsernameBtn = document.getElementById('edit-username-btn');
+  toggleMicBtn = document.getElementById('toggle-mic-btn');
+  toggleVideoBtn = document.getElementById('toggle-video-btn');
 }
 
 // Import and display server URL from config
@@ -79,16 +122,13 @@ if (document.readyState === 'loading') {
     initializeDOMElements();
       updateUI();
         import('../config.js').then(({ CONFIG }) => {
-          if (serverUrlEl) {
-            serverUrlEl.textContent = CONFIG.WS.URL;
-          }
           console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
         }).catch(err => {
           console.warn('[Popup] Could not load config:', err);
         });
+    setupEventListeners();
     loadUsername().then(() => {
       updateStatus();
-      setupEventListeners();
       startStatusPolling();
     });
   });
@@ -97,16 +137,13 @@ if (document.readyState === 'loading') {
   initializeDOMElements();
     updateUI();
   import('../config.js').then(({ CONFIG }) => {
-    if (serverUrlEl) {
-      serverUrlEl.textContent = CONFIG.WS.URL;
-    }
     console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
   }).catch(err => {
     console.warn('[Popup] Could not load config:', err);
   });
+  setupEventListeners();
   loadUsername().then(() => {
     updateStatus();
-    setupEventListeners();
     startStatusPolling();
   });
 }
@@ -218,9 +255,18 @@ async function joinRoomByCode() {
 }
 
 function setupEventListeners() {
+  if (listenersBound) return;
+  listenersBound = true;
+
+  if (startBtn) {
   startBtn.addEventListener('click', startParty);
+  }
+  if (stopBtn) {
   stopBtn.addEventListener('click', stopParty);
+  }
+  if (resetBtn) {
   resetBtn.addEventListener('click', resetParty);
+  }
   if (copyLinkBtn) {
     copyLinkBtn.addEventListener('click', copyShareLink);
   }
@@ -245,14 +291,106 @@ function setupEventListeners() {
   if (saveUsernameBtn) {
     saveUsernameBtn.addEventListener('click', saveUsername);
   }
-  const usernameInput = document.getElementById('username-input');
-  if (usernameInput) {
-    usernameInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        saveUsername();
+  if (toggleMicBtn) {
+    toggleMicBtn.addEventListener('click', () => toggleMedia('audio'));
+  }
+  if (toggleVideoBtn) {
+    toggleVideoBtn.addEventListener('click', () => toggleMedia('video'));
+  }
+  if (editUsernameBtn) {
+    editUsernameBtn.addEventListener('click', () => {
+      if (usernameLabel) {
+        usernameLabel.contentEditable = 'true';
+        usernameLabel.focus();
+        // Select all text
+        const range = document.createRange();
+        range.selectNodeContents(usernameLabel);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      if (editUsernameBtn) {
+        editUsernameBtn.classList.add('hidden');
+      }
+      if (saveUsernameBtn) {
+        saveUsernameBtn.classList.remove('hidden');
       }
     });
   }
+  if (saveUsernameBtn) {
+    saveUsernameBtn.addEventListener('click', saveUsername);
+  }
+  if (usernameLabel) {
+    usernameLabel.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveUsername();
+      }
+      if (e.key === 'Escape') {
+        usernameLabel.contentEditable = 'false';
+        usernameLabel.textContent = persistedUsername;
+        if (saveUsernameBtn) {
+          saveUsernameBtn.classList.add('hidden');
+        }
+        if (editUsernameBtn) {
+          editUsernameBtn.classList.remove('hidden');
+        }
+      }
+    });
+  }
+}
+
+function sendToNetflixTab(message, callback) {
+  chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+    if (!tabs || tabs.length === 0) {
+      callback && callback({ success: false, error: 'No Netflix tab found' });
+      return;
+    }
+    chrome.tabs.sendMessage(tabs[0].id, message, (response) => {
+      if (chrome.runtime.lastError) {
+        callback && callback({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      callback && callback(response);
+    });
+  });
+}
+
+function updateMediaButtons(state) {
+  if (!state) return;
+  if (toggleMicBtn) {
+    const micEnabled = state.audioEnabled;
+    toggleMicBtn.textContent = micEnabled ? '🎤' : '🔇';
+    toggleMicBtn.setAttribute('aria-label', micEnabled ? 'Mute mic' : 'Unmute mic');
+    toggleMicBtn.setAttribute('title', micEnabled ? 'Mute mic' : 'Unmute mic');
+    toggleMicBtn.classList.toggle('active', !micEnabled);
+  }
+  if (toggleVideoBtn) {
+    const videoEnabled = state.videoEnabled;
+    toggleVideoBtn.textContent = videoEnabled ? '📷' : '🚫📷';
+    toggleVideoBtn.setAttribute('aria-label', videoEnabled ? 'Turn off camera' : 'Turn on camera');
+    toggleVideoBtn.setAttribute('title', videoEnabled ? 'Turn off camera' : 'Turn on camera');
+    toggleVideoBtn.classList.toggle('active', !videoEnabled);
+  }
+}
+
+function toggleMedia(kind) {
+  const type = kind === 'audio' ? 'TOGGLE_MIC' : 'TOGGLE_CAMERA';
+  sendToNetflixTab({ type }, (response) => {
+    if (!response || !response.success) {
+      console.warn('[Popup] Media toggle failed:', response?.error);
+      return;
+    }
+    updateMediaButtons(response.state);
+  });
+}
+
+function refreshMediaState() {
+  sendToNetflixTab({ type: 'GET_MEDIA_STATE' }, (response) => {
+    if (response && response.success) {
+      updateMediaButtons(response.state);
+    }
+  });
 }
 
 function updateStatus() {
@@ -266,15 +404,23 @@ function updateStatus() {
 }
 
 function updateUI() {
-  if (!statusEl || !statusText || !controlsSection || !joinSection || !startBtn || !stopBtn || !resetBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
+  if (!statusEl || !statusText || !statusControls || !joinSection || !startBtn || !stopBtn || !resetBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
     console.warn('[Popup] UI elements not ready, skipping update');
     return;
   }
   const { isConnected, roomId, userId } = status;
   if (isConnected) {
-    statusEl.className = 'status connected';
+    if (statusEl) {
+      statusEl.classList.remove('hidden');
+      statusEl.className = 'status connected status-minimal';
+    }
     statusText.textContent = '🟢 Connected';
-    controlsSection.classList.remove('hidden');
+    if (statusControls) {
+      statusControls.classList.remove('hidden');
+    }
+    if (controlsSection) {
+      controlsSection.classList.remove('hidden');
+    }
     joinSection.classList.add('hidden');
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
@@ -284,13 +430,25 @@ function updateUI() {
     
     // Display username if set, otherwise show userId
     const displayName = persistedUsername || userId;
-    userDisplay.textContent = displayName;
+    // Only update if not currently being edited
+    if (userDisplay && userDisplay.contentEditable !== 'true') {
+      userDisplay.textContent = displayName;
+    }
     updateShareLink();
     updateStats();
+    refreshMediaState();
   } else {
-    statusEl.className = 'status disconnected';
+    if (statusEl) {
+      statusEl.classList.add('hidden');
+      statusEl.className = 'status disconnected status-minimal';
+    }
     statusText.textContent = '🔴 Disconnected';
-    controlsSection.classList.remove('hidden');
+    if (statusControls) {
+      statusControls.classList.remove('hidden');
+    }
+    if (controlsSection) {
+      controlsSection.classList.remove('hidden');
+    }
     joinSection.classList.remove('hidden');
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
@@ -445,12 +603,15 @@ async function updateStats() {
           const isCurrentUser = user.userId === status.userId;
           const bgColor = isCurrentUser ? 'rgba(167, 139, 250, 0.1)' : 'transparent';
           const borderColor = isCurrentUser ? '1px solid rgba(167, 139, 250, 0.3)' : '1px solid rgba(255,255,255,0.1)';
+          const displayName = isCurrentUser
+            ? (persistedUsername || user.username || 'You')
+            : (user.username || `${user.userId.substring(0, 8)}...`);
           
           return `
             <div style="padding: 8px; border-top: ${borderColor}; background-color: ${bgColor}; ${index === 0 ? 'border-top: none;' : ''}">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <div style="font-weight: 600; font-size: 12px; color: rgba(255,255,255,0.9);">
-                  ${user.userId.substring(0, 8)}...${isCurrentUser ? ' (You)' : ''}
+                <div style="font-weight: 600; font-size: 12px; color: rgba(82, 82, 82, 0.9);">
+                  ${displayName}${isCurrentUser ? ' (You)' : ''}
                 </div>
                 <div style="font-size: 10px; color: ${statusColor};">
                   ${user.isPlaying ? '▶' : '⏸'}

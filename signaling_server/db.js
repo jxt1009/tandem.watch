@@ -73,6 +73,7 @@ export async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(100) PRIMARY KEY,
         room_id VARCHAR(50),
+        username VARCHAR(50),
         "current_time" FLOAT,
         is_playing BOOLEAN,
         connection_quality VARCHAR(20),
@@ -81,6 +82,8 @@ export async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
       );
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(50);
 
       CREATE TABLE IF NOT EXISTS room_events (
         id SERIAL PRIMARY KEY,
@@ -270,20 +273,21 @@ export const RoomRepository = {
 // ============= USER REPOSITORY =============
 
 export const UserRepository = {
-  async create(userId, roomId) {
+  async create(userId, roomId, username = null) {
     try {
       // PostgreSQL
       await pgPool.query(
-        `INSERT INTO users (id, room_id, "current_time", "is_playing", last_heartbeat)
-         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-         ON CONFLICT (id) DO UPDATE SET room_id = $2, last_heartbeat = CURRENT_TIMESTAMP`,
-        [userId, roomId, 0, false]
+        `INSERT INTO users (id, room_id, username, "current_time", "is_playing", last_heartbeat)
+         VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+         ON CONFLICT (id) DO UPDATE SET room_id = $2, username = $3, last_heartbeat = CURRENT_TIMESTAMP`,
+        [userId, roomId, username, 0, false]
       );
 
       // Redis
       await redis.client.hSet(config.keys.user(userId), {
         id: userId,
         room_id: roomId,
+        username: username || '',
         current_time: '0',
         is_playing: 'false',
         connection_quality: 'good',
@@ -307,6 +311,7 @@ export const UserRepository = {
         return {
           id: cached.id,
           roomId: cached.room_id,
+          username: cached.username || null,
           currentTime: parseFloat(cached.current_time),
           isPlaying: cached.is_playing === 'true',
           connectionQuality: cached.connection_quality,
@@ -326,6 +331,7 @@ export const UserRepository = {
       if (updates.currentTime !== undefined) redisUpdate.current_time = String(updates.currentTime);
       if (updates.isPlaying !== undefined) redisUpdate.is_playing = String(updates.isPlaying);
       if (updates.connectionQuality !== undefined) redisUpdate.connection_quality = updates.connectionQuality;
+      if (updates.username !== undefined) redisUpdate.username = updates.username;
       if (updates.lastHeartbeat !== undefined) {
         redisUpdate.last_heartbeat = updates.lastHeartbeat.toISOString();
       } else {
@@ -336,8 +342,8 @@ export const UserRepository = {
 
       // Async update to PostgreSQL (non-blocking)
       pgPool.query(
-        `UPDATE users SET "current_time" = $1, "is_playing" = $2, last_heartbeat = $3 WHERE id = $4`,
-        [updates.currentTime || 0, updates.isPlaying || false, new Date(), userId]
+        `UPDATE users SET "current_time" = $1, "is_playing" = $2, last_heartbeat = $3, username = COALESCE($4, username) WHERE id = $5`,
+        [updates.currentTime || 0, updates.isPlaying || false, new Date(), updates.username || null, userId]
       ).catch(err => logger.error({ err, userId }, 'Failed to update user in PostgreSQL'));
     } catch (err) {
       logger.error({ err, userId }, 'Failed to update user');

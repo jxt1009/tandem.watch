@@ -168,7 +168,13 @@ export class UIManager {
       align-items: center;
       gap: 8px;
       transition: all 0.3s ease;
+      cursor: pointer;
     `;
+
+    // Add click handler to open extension popup
+    indicator.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'OPEN_POPUP' });
+    });
 
     const dot = document.createElement('div');
     dot.id = 'tandem-connection-dot';
@@ -215,6 +221,10 @@ export class UIManager {
         dot.style.background = '#4ade80';
         dot.style.animation = 'pulse 2s ease-in-out infinite';
         text.textContent = 'Connected';
+      } else if (status === 'waiting') {
+        dot.style.background = '#a78bfa';
+        dot.style.animation = 'spin 1s linear infinite';
+        text.textContent = 'Waiting for others...';
       } else if (status === 'reconnecting') {
         dot.style.background = '#f59e0b';
         dot.style.animation = 'spin 1s linear infinite';

@@ -118,6 +118,7 @@ const server = http.createServer((req, res) => {
               hostUserId: room.hostUserId,
               users: users.map(u => ({
                 userId: u.id,
+                username: u.username || null,
                 currentTime: u.currentTime,
                 isPlaying: u.isPlaying,
                 connectionQuality: u.connectionQuality,
@@ -267,6 +268,7 @@ wss.on('connection', (ws, req) => {
       if (type === 'JOIN') {
         roomId = data.roomId;
         userId = data.userId;
+        const username = data.username || null;
 
         if (!roomId || !userId) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'Missing roomId or userId' }));
@@ -280,7 +282,7 @@ wss.on('connection', (ws, req) => {
         }
 
         // Create user
-        await UserRepository.create(userId, roomId);
+        await UserRepository.create(userId, roomId, username);
 
         // Store connection
         wsConnections.set(ws, { userId, roomId, peerId });
@@ -298,7 +300,7 @@ wss.on('connection', (ws, req) => {
         localRoomSubscribers.get(roomId).add(ws);
 
         // Log event
-        await EventRepository.log(roomId, 'USER_JOINED', userId, { peerId });
+        await EventRepository.log(roomId, 'USER_JOINED', userId, { peerId, username });
 
         // Send room state to joining user
         ws.send(JSON.stringify({
@@ -316,10 +318,25 @@ wss.on('connection', (ws, req) => {
           type: 'USER_JOINED',
           userId,
           peerId,
+          username,
           timestamp: Date.now(),
         }, ws);
 
-        logger.debug({ userId, roomId, peerId }, 'User joined room');
+        logger.debug({ userId, roomId, peerId, username }, 'User joined room');
+      }
+
+      // ===== USERNAME UPDATE =====
+      else if (type === 'UPDATE_USERNAME') {
+        if (!roomId || !userId) return;
+        const username = data.username || null;
+        await UserRepository.update(userId, { username });
+        await EventRepository.log(roomId, 'USERNAME_UPDATED', userId, { username });
+        broadcastToRoom(roomId, {
+          type: 'USERNAME_UPDATED',
+          userId,
+          username,
+          timestamp: Date.now(),
+        });
       }
 
       // ===== HEARTBEAT (PING/PONG) =====
