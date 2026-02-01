@@ -355,29 +355,36 @@ wss.on('connection', (ws, req) => {
 
         const control = data.control; // 'play' | 'pause'
         const isPlaying = control === 'play';
-        const currentTime = data.currentTime || 0;
+        const currentTime = Number.isFinite(data.currentTime) ? data.currentTime : null;
 
-        await RoomRepository.update(roomId, {
-          isPlaying,
-          currentTime,
-        });
+        const roomUpdates = { isPlaying };
+        if (currentTime !== null) {
+          roomUpdates.currentTime = currentTime;
+        }
+
+        await RoomRepository.update(roomId, roomUpdates);
 
         if (userId) {
-          await UserRepository.update(userId, {
-            isPlaying,
-            currentTime,
-          });
+          const userUpdates = { isPlaying };
+          if (currentTime !== null) {
+            userUpdates.currentTime = currentTime;
+          }
+          await UserRepository.update(userId, userUpdates);
         }
 
         await EventRepository.log(roomId, 'PLAY_PAUSE', userId, { control, currentTime });
 
-        broadcastToRoom(roomId, {
+        const payload = {
           type: 'PLAY_PAUSE',
           userId,
           control,
-          currentTime,
           timestamp: Date.now(),
-        });
+        };
+        if (currentTime !== null) {
+          payload.currentTime = currentTime;
+        }
+
+        broadcastToRoom(roomId, payload);
       }
 
       else if (type === 'SEEK') {
