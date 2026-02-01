@@ -62,27 +62,48 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.url === '/status') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    
     // Collect room information
-    const rooms = [];
-    for (const [roomId, subscribers] of localRoomSubscribers) {
-      rooms.push({
-        roomId,
-        connectionCount: subscribers.size,
-      });
-    }
-    
-    const status = {
-      nodeId: config.nodeId,
-      timestamp: new Date().toISOString(),
-      localConnections: wsConnections.size,
-      localRooms: localRoomSubscribers.size,
-      rooms,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-    };
-    res.end(JSON.stringify(status, null, 2));
+    (async () => {
+      try {
+        const rooms = [];
+        for (const roomId of localRoomSubscribers.keys()) {
+          const room = await RoomRepository.getById(roomId);
+          const users = await UserRepository.getRoomUsers(roomId);
+          if (room) {
+            rooms.push({
+              roomId,
+              connectionCount: localRoomSubscribers.get(roomId).size,
+              currentTime: room.currentTime,
+              isPlaying: room.isPlaying,
+              currentUrl: room.currentUrl,
+              hostUserId: room.hostUserId,
+              users: users.map(u => ({
+                userId: u.id,
+                currentTime: u.currentTime,
+                isPlaying: u.isPlaying,
+                connectionQuality: u.connectionQuality,
+              })),
+            });
+          }
+        }
+        
+        const status = {
+          nodeId: config.nodeId,
+          timestamp: new Date().toISOString(),
+          localConnections: wsConnections.size,
+          localRooms: localRoomSubscribers.size,
+          rooms,
+          uptime: process.uptime(),
+          memory: process.memoryUsage(),
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(status, null, 2));
+      } catch (err) {
+        logger.error({ err }, 'Error generating status');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to generate status' }));
+      }
+    })();
     return;
   }
 
