@@ -80,15 +80,5 @@ spec:
               - sh
               - -c
               - sleep 15
-        
-        volumeMounts:
-        - name: app
-          mountPath: /app
-      
-      volumes:
-      - name: app
-        configMap:
-          name: signaling-server-code
-          defaultMode: 0755
   
   minReadySeconds: 10
