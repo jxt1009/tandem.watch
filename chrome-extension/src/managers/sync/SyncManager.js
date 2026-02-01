@@ -299,7 +299,14 @@ export class SyncManager {
 
   // Remote event handlers
   handleRequestSync(fromUserId, respectAutoPlay) { return this.remote.handleRequestSync(fromUserId, respectAutoPlay); }
-  handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay) { return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay); }
+  handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay) {
+    // Only handle sync responses on /watch pages to avoid preview videos interfering
+    if (!this.isOnWatchPage()) {
+      console.log('[SyncManager] Ignoring sync response - not on /watch page');
+      return;
+    }
+    return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay);
+  }
   handlePlaybackControl(control, currentTime, fromUserId) { return this.remote.handlePlaybackControl(control, currentTime, fromUserId); }
   handleSeek(currentTime, isPlaying, fromUserId) { return this.remote.handleSeek(currentTime, isPlaying, fromUserId); }
 }
