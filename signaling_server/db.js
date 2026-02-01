@@ -336,7 +336,7 @@ export const UserRepository = {
 
       // Async update to PostgreSQL (non-blocking)
       pgPool.query(
-        `UPDATE users SET current_time = $1, is_playing = $2, last_heartbeat = $3 WHERE id = $4`,
+        `UPDATE users SET "current_time" = $1, "is_playing" = $2, last_heartbeat = $3 WHERE id = $4`,
         [updates.currentTime || 0, updates.isPlaying || false, new Date(), userId]
       ).catch(err => logger.error({ err, userId }, 'Failed to update user in PostgreSQL'));
     } catch (err) {
