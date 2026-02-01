@@ -200,17 +200,11 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
       });
     },
     async handlePlaybackControl(control, currentTime, fromUserId) {
-      console.log('[SyncManager] Remote', control.toUpperCase(), 'at', currentTime, 'from', fromUserId);
+      console.log('[SyncManager] Remote', control.toUpperCase(), 'from', fromUserId);
       
       await applyRemote(control, 1000, async () => {
-        // Seek to the exact position first
-        if (currentTime != null) {
-          const currentTimeMs = currentTime * 1000;
-          await netflix.seek(currentTimeMs);
-          console.log('[SyncManager] Seeked to', currentTime.toFixed(2) + 's before', control);
-        }
-        
-        // Then apply play/pause
+        // Only apply play/pause, don't seek
+        // Position is synced separately via SEEK and POSITION_UPDATE messages
         if (control === 'play') {
           await netflix.play();
         } else {

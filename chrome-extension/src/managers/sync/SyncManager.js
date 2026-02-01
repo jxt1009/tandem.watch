@@ -128,8 +128,7 @@ export class SyncManager {
               
               this.state.safeSendMessage({ 
                 type: 'PLAY_PAUSE', 
-                control: isPaused ? 'pause' : 'play', 
-                currentTime: currentTimeSeconds 
+                control: isPaused ? 'pause' : 'play'
               });
             } catch (e) {
               console.error('[SyncManager] Error broadcasting leader state:', e);
@@ -288,8 +287,7 @@ export class SyncManager {
     console.log('[SyncManager] Broadcasting PLAY event');
     this.state.safeSendMessage({ 
       type: 'PLAY_PAUSE', 
-      control: 'play', 
-      currentTime: video.currentTime 
+      control: 'play'
     });
   }
 
@@ -301,8 +299,7 @@ export class SyncManager {
     console.log('[SyncManager] Broadcasting PAUSE event');
     this.state.safeSendMessage({ 
       type: 'PLAY_PAUSE', 
-      control: 'pause', 
-      currentTime: video.currentTime 
+      control: 'pause'
     });
   }
 
