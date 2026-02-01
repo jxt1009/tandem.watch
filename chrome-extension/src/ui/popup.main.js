@@ -77,6 +77,7 @@ import('../config.js').then(({ CONFIG }) => {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     initializeDOMElements();
+      updateUI();
         import('../config.js').then(({ CONFIG }) => {
           if (serverUrlEl) {
             serverUrlEl.textContent = CONFIG.WS.URL;
@@ -93,15 +94,16 @@ if (document.readyState === 'loading') {
   });
 } else {
   // DOM is already loaded
-    import('../config.js').then(({ CONFIG }) => {
-      if (serverUrlEl) {
-        serverUrlEl.textContent = CONFIG.WS.URL;
-      }
-      console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
-    }).catch(err => {
-      console.warn('[Popup] Could not load config:', err);
-    });
   initializeDOMElements();
+    updateUI();
+  import('../config.js').then(({ CONFIG }) => {
+    if (serverUrlEl) {
+      serverUrlEl.textContent = CONFIG.WS.URL;
+    }
+    console.log('[Popup] Signaling server configured at:', CONFIG.WS.URL);
+  }).catch(err => {
+    console.warn('[Popup] Could not load config:', err);
+  });
   loadUsername().then(() => {
     updateStatus();
     setupEventListeners();
@@ -264,6 +266,10 @@ function updateStatus() {
 }
 
 function updateUI() {
+  if (!statusEl || !statusText || !controlsSection || !joinSection || !startBtn || !stopBtn || !resetBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
+    console.warn('[Popup] UI elements not ready, skipping update');
+    return;
+  }
   const { isConnected, roomId, userId } = status;
   if (isConnected) {
     statusEl.className = 'status connected';
