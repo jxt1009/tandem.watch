@@ -276,9 +276,12 @@ wss.on('connection', (ws, req) => {
         const currentTime = data.currentTime || 0;
         const isPlaying = data.isPlaying || false;
 
+        console.log(`[POSITION_UPDATE] userId: ${userId}, roomId: ${roomId}, currentTime: ${currentTime}, isPlaying: ${isPlaying}`);
+
         // Update both the user and the room with current position
         await UserRepository.update(userId, { currentTime, isPlaying });
         await RoomRepository.update(roomId, { currentTime, isPlaying });
+        console.log(`[POSITION_UPDATE] Updated room ${roomId} to currentTime: ${currentTime}`);
         // Don't broadcast position updates, just track them
       }
 
@@ -303,6 +306,10 @@ wss.on('connection', (ws, req) => {
         if (!roomId) return;
 
         const room = await RoomRepository.getById(roomId);
+        if (!room) {
+          console.log(`[REQUEST_SYNC] Room not found: ${roomId}`);
+          return;
+        }
         ws.send(JSON.stringify({
           type: 'SYNC_RESPONSE',
           fromUserId: 'server',

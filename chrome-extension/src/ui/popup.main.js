@@ -127,6 +127,16 @@ function copyRoomId() {
   }
 }
 
+const formatTime = (seconds) => {
+  if (seconds === null || seconds === undefined) {
+    return '--:--';
+  }
+  const totalSeconds = Math.floor(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
+};
+
 function startStatusPolling() {
   updateStatus();
   setInterval(updateStatus, 2000);
@@ -152,7 +162,7 @@ async function updateStats() {
     const httpUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'http://').replace(/\/ws$/, '');
     const statusUrl = httpUrl + '/status';
     
-    console.log('[Popup] Fetching stats from server:', statusUrl);
+    console.log('[Popup] Fetching stats from server:', statusUrl, 'at', new Date().toISOString());
     const response = await fetch(statusUrl);
     if (!response.ok) {
       console.error('[Popup] Failed to fetch server status:', response.status, response.statusText);
@@ -160,7 +170,7 @@ async function updateStats() {
     }
 
     const serverStatus = await response.json();
-    console.log('[Popup] Server status received:', serverStatus);
+    console.log('[Popup] Server status received at', new Date().toISOString(), ':', serverStatus);
     console.log('[Popup] Looking for room:', status.roomId);
 
     // Find our room
@@ -178,24 +188,10 @@ async function updateStats() {
     console.log('[Popup] Room currentTime:', room.currentTime, 'isPlaying:', room.isPlaying);
     console.log('[Popup] Room users:', room.users);
 
-    const formatTime = (seconds) => {
-      console.log('[Popup] Formatting time:', seconds, 'type:', typeof seconds);
-      if (seconds === null || seconds === undefined) {
-        console.log('[Popup] Time is null/undefined, returning --:--');
-        return '--:--';
-      }
-      const totalSeconds = Math.floor(seconds);
-      const minutes = Math.floor(totalSeconds / 60);
-      const secs = totalSeconds % 60;
-      const formatted = `${minutes}:${secs.toString().padStart(2, '0')}`;
-      console.log('[Popup] Formatted time:', formatted);
-      return formatted;
-    };
-
     // Update local time (use room's currentTime as reference)
     if (localTimeEl) {
       const formattedTime = formatTime(room.currentTime);
-      console.log('[Popup] Setting localTimeEl.textContent to:', formattedTime);
+      console.log('[Popup] Updating local time from', localTimeEl.textContent, 'to', formattedTime);
       localTimeEl.textContent = formattedTime;
     } else {
       console.log('[Popup] localTimeEl not found!');
