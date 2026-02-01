@@ -409,14 +409,14 @@ wss.on('connection', (ws, req) => {
         const isPlaying = data.isPlaying || false;
 
         // Get room to verify this is an active party user
-        const room = await RoomRepository.get(roomId);
+        const room = await RoomRepository.getById(roomId);
         if (!room) {
           console.log(`[POSITION_UPDATE] Room ${roomId} not found, ignoring update`);
           return;
         }
 
         // Get user's current URL to check if they're on a /watch page
-        const user = await UserRepository.get(userId);
+        const user = await UserRepository.getById(userId);
         const userUrl = user?.currentUrl || '';
         
         // Only accept position updates from /watch pages, unless it's 0 (which means they're not actively watching)
