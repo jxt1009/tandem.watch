@@ -27,20 +27,20 @@ export const redis = {
 };
 
 export async function initializeRedis() {
-  redis.client = createClient({
-    host: config.redis.host,
-    port: config.redis.port,
-    password: config.redis.password,
+  const redisConfig = {
+    socket: {
+      host: config.redis.host,
+      port: config.redis.port,
+    },
     db: config.redis.db,
-    retry_strategy: config.redis.retryStrategy,
-  });
+  };
 
-  redis.subscriber = createClient({
-    host: config.redis.host,
-    port: config.redis.port,
-    password: config.redis.password,
-    db: config.redis.db,
-  });
+  if (config.redis.password) {
+    redisConfig.password = config.redis.password;
+  }
+
+  redis.client = createClient(redisConfig);
+  redis.subscriber = createClient(redisConfig);
 
   redis.client.on('error', (err) => {
     logger.error({ err }, 'Redis client error');
