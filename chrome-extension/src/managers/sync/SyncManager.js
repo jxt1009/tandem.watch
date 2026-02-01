@@ -230,6 +230,16 @@ export class SyncManager {
         }
       }
       
+      // Clean up old listeners first (in case of re-setup)
+      if (this.listeners && this.listeners.cleanup) {
+        try {
+          this.listeners.cleanup();
+          console.log('[SyncManager] Cleaned up old listeners before attaching new ones');
+        } catch (e) {
+          console.warn('[SyncManager] Error cleaning up old listeners:', e);
+        }
+      }
+
       const listeners = attachPlaybackListeners({
         video,
         state: this.state,

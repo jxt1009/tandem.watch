@@ -40,7 +40,8 @@ export function attachPlaybackListeners({ video, state, isInitializedRef, lock, 
 
   // Continuous position tracking (every 500ms)
   const positionUpdateInterval = setInterval(() => {
-    if (state.isActive() && isInitializedRef.get() && !lock.isActive() && onPositionUpdate) {
+    // Only send position updates from /watch pages
+    if (window.location.pathname.startsWith('/watch') && state.isActive() && isInitializedRef.get() && !lock.isActive() && onPositionUpdate) {
       onPositionUpdate(video);
     }
   }, 500);
