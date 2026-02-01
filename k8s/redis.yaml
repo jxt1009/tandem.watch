@@ -11,6 +11,26 @@ data:
     appendfsync everysec
 ---
 apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/k8s/redis
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - gigabyte
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: redis-pvc
@@ -21,6 +41,7 @@ spec:
   resources:
     requests:
       storage: 5Gi
+  volumeName: redis-pv
 ---
 apiVersion: apps/v1
 kind: StatefulSet
