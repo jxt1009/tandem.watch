@@ -331,10 +331,17 @@ export class SyncManager {
       return;
     }
     // Send continuous position update for live timestamp tracking
-    this.state.safeSendMessage({ 
-      type: 'POSITION_UPDATE', 
-      currentTime: video.currentTime, 
-      isPlaying: !video.paused 
+    // Use Netflix controller for accurate time (video.currentTime can be 0 on Netflix)
+    this.netflix.getCurrentTime().then((currentTimeMs) => {
+      if (currentTimeMs == null) return;
+      const currentTime = currentTimeMs / 1000;
+      this.state.safeSendMessage({ 
+        type: 'POSITION_UPDATE', 
+        currentTime, 
+        isPlaying: !video.paused 
+      });
+    }).catch((err) => {
+      console.warn('[SyncManager] Failed to read currentTime for POSITION_UPDATE:', err);
     });
   }
 
