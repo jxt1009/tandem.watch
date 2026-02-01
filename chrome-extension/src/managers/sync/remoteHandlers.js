@@ -8,41 +8,54 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef })
 
   return {
     async handleRequestSync(fromUserId, respectAutoPlay = false) {
-      if (!isInitializedRef.get()) {
-        console.log('[SyncManager] Not yet initialized, ignoring sync request');
-        return;
-      }
-      
       const currentUrl = window.location.href;
       const isOnWatchPage = window.location.pathname.startsWith('/watch');
-      
+
       // If we're on browse page, don't send sync response
       if (!isOnWatchPage) {
         console.log('[SyncManager] On browse page, not sending sync response');
         return;
       }
-      
-      try {
-        const currentTime = await netflix.getCurrentTime();
-        const isPaused = await netflix.isPaused();
-        
-        if (currentTime == null) {
-          console.log('[SyncManager] Invalid playback state, ignoring sync request');
-          return;
+
+      const maxAttempts = 6;
+      const retryDelayMs = 500;
+
+      const attemptSyncResponse = async (attempt) => {
+        try {
+          const currentTime = await netflix.getCurrentTime();
+          const isPaused = await netflix.isPaused();
+
+          if (currentTime == null) {
+            if (attempt < maxAttempts) {
+              console.log('[SyncManager] Playback state not ready, retrying sync response (attempt', attempt + 1, ')');
+              setTimeout(() => attemptSyncResponse(attempt + 1), retryDelayMs);
+            } else {
+              console.log('[SyncManager] Playback state still not ready, giving up on sync response');
+            }
+            return;
+          }
+
+          const currentTimeSeconds = currentTime / 1000;
+          console.log('[SyncManager] Sending SYNC_RESPONSE to', fromUserId, 'at', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing', 'URL:', currentUrl, respectAutoPlay ? '(will respect auto-play)' : '');
+
+          state.safeSendMessage({
+            type: 'SYNC_RESPONSE',
+            targetUserId: fromUserId,
+            currentTime: currentTimeSeconds,
+            isPlaying: !isPaused,
+            url: currentUrl,
+            respectAutoPlay: respectAutoPlay
+          });
+        } catch (e) {
+          console.error('[SyncManager] Error handling sync request:', e);
         }
-        
-        const currentTimeSeconds = currentTime / 1000;
-        console.log('[SyncManager] Sending SYNC_RESPONSE to', fromUserId, 'at', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing', 'URL:', currentUrl, respectAutoPlay ? '(will respect auto-play)' : '');
-        
-        state.safeSendMessage({
-          type: 'SYNC_RESPONSE',
-          targetUserId: fromUserId,
-          currentTime: currentTimeSeconds,
-          isPlaying: !isPaused,
-          url: currentUrl,
-          respectAutoPlay: respectAutoPlay
-        });
-      } catch (e) { console.error('[SyncManager] Error handling sync request:', e); }
+      };
+
+      if (!isInitializedRef.get()) {
+        console.log('[SyncManager] Not yet initialized, will still attempt to respond to sync request');
+      }
+
+      attemptSyncResponse(1);
     },
     async handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay = false) {
       if (isInitializedRef.get()) {

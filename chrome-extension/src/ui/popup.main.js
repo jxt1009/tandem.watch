@@ -71,7 +71,7 @@ async function saveUsername() {
 
 // Cache DOM elements
 let statusEl, statusText, statusControls, controlsSection, joinSection, partyInfo, statsSection, videoSection;
-let startBtn, stopBtn, resetBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
+let startBtn, stopBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
 let userDisplay, localTimeEl, syncStatusEl, remoteUsersList, localVideo, remoteVideo;
 let copyLinkBtn, copyCodeBtn, saveUsernameBtn, serverUrlEl;
 let usernameLabel, usernameContainer, editUsernameBtn;
@@ -89,7 +89,6 @@ function initializeDOMElements() {
   videoSection = document.getElementById('video-section');
   startBtn = document.getElementById('start-btn');
   stopBtn = document.getElementById('stop-btn');
-  resetBtn = document.getElementById('reset-btn');
   shareLinkEl = document.getElementById('share-link');
   roomCodeDisplay = document.getElementById('room-code-display');
   roomCodeInput = document.getElementById('room-code-input');
@@ -326,9 +325,6 @@ function setupEventListeners() {
   if (stopBtn) {
   stopBtn.addEventListener('click', stopParty);
   }
-  if (resetBtn) {
-  resetBtn.addEventListener('click', resetParty);
-  }
   if (copyLinkBtn) {
     copyLinkBtn.addEventListener('click', copyShareLink);
   }
@@ -466,7 +462,7 @@ function updateStatus() {
 }
 
 function updateUI() {
-  if (!statusEl || !statusText || !statusControls || !joinSection || !startBtn || !stopBtn || !resetBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
+  if (!statusEl || !statusText || !statusControls || !joinSection || !startBtn || !stopBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
     console.warn('[Popup] UI elements not ready, skipping update');
     return;
   }
@@ -486,7 +482,6 @@ function updateUI() {
     joinSection.classList.add('hidden');
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
-    resetBtn.classList.remove('hidden');
     partyInfo.classList.remove('hidden');
     statsSection.classList.remove('hidden');
     
@@ -514,7 +509,6 @@ function updateUI() {
     joinSection.classList.remove('hidden');
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
-    resetBtn.classList.add('hidden');
     partyInfo.classList.add('hidden');
     statsSection.classList.add('hidden');
     videoSection.classList.add('hidden');
@@ -540,22 +534,6 @@ async function startParty() {
 function stopParty() {
   chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
     updateStatus();
-  });
-}
-
-function resetParty() {
-  resetBtn.disabled = true;
-  statusText.textContent = '♻️ Resetting...';
-  chrome.runtime.sendMessage({ type: 'STOP_PARTY' }, () => {
-    chrome.runtime.sendMessage({ type: 'START_PARTY', username: persistedUsername }, (response) => {
-      resetBtn.disabled = false;
-      if (response && response.success) {
-        setTimeout(updateStatus, 500);
-      } else {
-        alert('Error resetting party: ' + (response && response.error ? response.error : 'Unknown error'));
-        statusText.textContent = '🔴 Disconnected';
-      }
-    });
   });
 }
 
