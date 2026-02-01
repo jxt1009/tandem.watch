@@ -17,6 +17,9 @@ export class SyncManager {
     this.listeners = null;
     this.initialSyncRequestAt = 0;
     this.initialSyncWindowMs = 8000;
+    this.lastKnownTimeSeconds = 0;
+    this.videoMonitorInterval = null;
+    this.activeVideo = null;
 
     this.remote = createRemoteHandlers({
       state: this.state,
@@ -49,6 +52,7 @@ export class SyncManager {
       }
       
       console.log('[SyncManager] Video element found, setting up event listeners');
+      this.activeVideo = video;
       
       // Check for pending sync from URL navigation
       const pendingSyncStr = sessionStorage.getItem('tandem_pending_sync');
@@ -71,17 +75,8 @@ export class SyncManager {
               await this.netflix.pause();
             }
             
-            const listeners = attachPlaybackListeners({
-              video,
-              state: this.state,
-              isInitializedRef: this.isInitializedRef,
-              lock: this.lock,
-              onPlay: (vid) => this.broadcastPlay(vid),
-              onPause: (vid) => this.broadcastPause(vid),
-              onSeek: (vid) => this.broadcastSeek(vid),
-              onPositionUpdate: (vid) => this.broadcastPosition(vid)
-            });
-            this.listeners = listeners;
+            this.attachListeners(video);
+            this.startVideoMonitor();
             console.log('[SyncManager] Setup complete with pending sync applied');
             return;
           } else {
@@ -230,31 +225,55 @@ export class SyncManager {
         }
       }
       
-      // Clean up old listeners first (in case of re-setup)
-      if (this.listeners && this.listeners.cleanup) {
-        try {
-          this.listeners.cleanup();
-          console.log('[SyncManager] Cleaned up old listeners before attaching new ones');
-        } catch (e) {
-          console.warn('[SyncManager] Error cleaning up old listeners:', e);
-        }
-      }
-
-      const listeners = attachPlaybackListeners({
-        video,
-        state: this.state,
-        isInitializedRef: this.isInitializedRef,
-        lock: this.lock,
-        onPlay: (vid) => this.broadcastPlay(vid),
-        onPause: (vid) => this.broadcastPause(vid),
-        onSeek: (vid) => this.broadcastSeek(vid),
-        onPositionUpdate: (vid) => this.broadcastPosition(vid)
-      });
-      this.listeners = listeners;
+      this.attachListeners(video);
+      this.startVideoMonitor();
       console.log('[SyncManager] Setup complete - ready to sync');
     } catch (err) { 
       console.error('[SyncManager] Error setting up playback sync:', err); 
     }
+  }
+
+  attachListeners(video) {
+    // Clean up old listeners first (in case of re-setup)
+    if (this.listeners && this.listeners.cleanup) {
+      try {
+        const { handlePlay, handlePause, handleSeeked } = this.listeners;
+        if (this.listeners.video) {
+          this.listeners.video.removeEventListener('play', handlePlay);
+          this.listeners.video.removeEventListener('pause', handlePause);
+          this.listeners.video.removeEventListener('seeked', handleSeeked);
+        }
+        this.listeners.cleanup();
+        console.log('[SyncManager] Cleaned up old listeners before attaching new ones');
+      } catch (e) {
+        console.warn('[SyncManager] Error cleaning up old listeners:', e);
+      }
+    }
+
+    const listeners = attachPlaybackListeners({
+      video,
+      state: this.state,
+      isInitializedRef: this.isInitializedRef,
+      lock: this.lock,
+      onPlay: (vid) => this.broadcastPlay(vid),
+      onPause: (vid) => this.broadcastPause(vid),
+      onSeek: (vid) => this.broadcastSeek(vid),
+      onPositionUpdate: (vid) => this.broadcastPosition(vid)
+    });
+    this.listeners = listeners;
+  }
+
+  startVideoMonitor() {
+    if (this.videoMonitorInterval) return;
+    this.videoMonitorInterval = setInterval(() => {
+      if (!this.isOnWatchPage()) return;
+      const currentVideo = this.netflix.getVideoElement();
+      if (currentVideo && currentVideo !== this.activeVideo) {
+        console.log('[SyncManager] Detected new Netflix video element, reattaching listeners');
+        this.activeVideo = currentVideo;
+        this.attachListeners(currentVideo);
+      }
+    }, 1000);
   }
 
   teardown() {
@@ -270,6 +289,11 @@ export class SyncManager {
       } catch (e) { console.warn('[SyncManager] Error removing listeners:', e); }
       this.listeners = null;
     }
+    if (this.videoMonitorInterval) {
+      clearInterval(this.videoMonitorInterval);
+      this.videoMonitorInterval = null;
+    }
+    this.activeVideo = null;
     this.isInitializedRef.set(false);
   }
 
@@ -333,8 +357,24 @@ export class SyncManager {
     // Send continuous position update for live timestamp tracking
     // Use Netflix controller for accurate time (video.currentTime can be 0 on Netflix)
     this.netflix.getCurrentTime().then((currentTimeMs) => {
-      if (currentTimeMs == null) return;
-      const currentTime = currentTimeMs / 1000;
+      let currentTime = null;
+      if (currentTimeMs != null) {
+        currentTime = currentTimeMs / 1000;
+      }
+
+      // Fallback to video element time if Netflix API not ready
+      if ((currentTime == null || currentTime === 0) && video?.currentTime > 0) {
+        currentTime = video.currentTime;
+      }
+
+      // If still zero, keep last known time to avoid resetting to 0
+      if (currentTime == null || currentTime === 0) {
+        currentTime = this.lastKnownTimeSeconds || 0;
+      } else {
+        this.lastKnownTimeSeconds = currentTime;
+      }
+
+      if (currentTime === 0) return;
       this.state.safeSendMessage({ 
         type: 'POSITION_UPDATE', 
         currentTime, 

@@ -7,7 +7,9 @@
     getPlayer: function() {
       try {
         const videoPlayer = window.netflix.appContext.state.playerApp.getAPI().videoPlayer;
-        const sessionId = videoPlayer.getAllPlayerSessionIds()[0];
+        const sessions = videoPlayer.getAllPlayerSessionIds();
+        const sessionId = sessions && sessions.length ? sessions[sessions.length - 1] : null;
+        if (!sessionId) return null;
         return videoPlayer.getVideoPlayerBySessionId(sessionId);
       } catch (e) {
         console.warn('Failed to get Netflix player:', e);
@@ -32,7 +34,7 @@
     
     getCurrentTime: function() {
       const player = this.getPlayer();
-      return player ? player.getCurrentTime() : 0;
+      return player ? player.getCurrentTime() : null;
     },
     
     isPaused: function() {
