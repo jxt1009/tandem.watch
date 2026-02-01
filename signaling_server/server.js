@@ -16,6 +16,45 @@ import {
 // ============= STATE =============
 const wsConnections = new Map(); // WebSocket -> { userId, roomId, peerId }
 const localRoomSubscribers = new Map(); // roomId -> Set of subscribed WebSockets
+const roomToShortId = new Map(); // roomId -> shortId (in-memory cache)
+
+// ============= SHORT URL HELPERS =============
+
+function generateShortId() {
+  // Generate a short alphanumeric ID (6-8 chars)
+  // Using base36 (0-9, a-z) for maximum compactness
+  return Math.random().toString(36).substring(2, 9);
+}
+
+async function getOrCreateShortId(roomId) {
+  // Check in-memory cache first
+  if (roomToShortId.has(roomId)) {
+    return roomToShortId.get(roomId);
+  }
+
+  // Check Redis for persistence
+  const key = config.keys.shortId(roomId);
+  let shortId = await redis.client.get(key);
+  
+  if (!shortId) {
+    // Generate new short ID
+    shortId = generateShortId();
+    
+    // Store mapping both ways in Redis for fast lookup
+    await redis.client.set(key, shortId, 'EX', 7 * 24 * 60 * 60); // 7 days
+    await redis.client.set(config.keys.shortIdReverse(shortId), roomId, 'EX', 7 * 24 * 60 * 60);
+  }
+  
+  // Cache in memory
+  roomToShortId.set(roomId, shortId);
+  
+  return shortId;
+}
+
+async function getRoomIdFromShortId(shortId) {
+  // Lookup in Redis
+  return await redis.client.get(config.keys.shortIdReverse(shortId));
+}
 
 // ============= PUBSUB SETUP =============
 
@@ -126,8 +165,56 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Handle short URL redirects: /room/shortId
+  const roomMatch = req.url.match(/^\/room\/([a-z0-9]+)$/i);
+  if (roomMatch) {
+    const shortId = roomMatch[1];
+    (async () => {
+      try {
+        const roomId = await getRoomIdFromShortId(shortId);
+        if (!roomId) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Room not found');
+          logger.warn({ shortId }, 'Short URL not found');
+          return;
+        }
+
+        // Redirect to Netflix with the roomId as query param
+        const netflixUrl = `https://www.netflix.com/?tandemRoom=${encodeURIComponent(roomId)}`;
+        res.writeHead(302, { Location: netflixUrl });
+        res.end();
+
+        logger.debug({ shortId, roomId }, 'Redirected short URL to Netflix');
+      } catch (err) {
+        logger.error({ err, shortId }, 'Error resolving short URL');
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+      }
+    })();
+    return;
+  }
+
+  // Handle API to get or create short ID: /api/short-id/:roomId
+  const shortIdMatch = req.url.match(/^\/api\/short-id\/(.+)$/);
+  if (shortIdMatch) {
+    const roomId = decodeURIComponent(shortIdMatch[1]);
+    (async () => {
+      try {
+        const shortId = await getOrCreateShortId(roomId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ shortId, roomId, shortUrl: `https://watch.toper.dev/room/${shortId}` }));
+        logger.debug({ roomId, shortId }, 'Created or retrieved short ID');
+      } catch (err) {
+        logger.error({ err, roomId }, 'Error creating short ID');
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Failed to create short ID' }));
+      }
+    })();
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end(`Signaling server running (${config.nodeId})\nEndpoints: /status, /health, /metrics`);
+  res.end(`Signaling server running (${config.nodeId})\nEndpoints: /status, /health, /metrics, /room/:shortId`);
 });
 
 const wss = new WebSocketServer({ server, path: '/ws' });

@@ -46,6 +46,8 @@ export const config = {
     activeRooms: 'active:rooms',
     activeUsers: 'active:users',
     pubsub: (roomId) => `room:${roomId}:pubsub`,
+    shortId: (roomId) => `shortid:${roomId}`,
+    shortIdReverse: (shortId) => `shortid:rev:${shortId}`,
   },
 };
 

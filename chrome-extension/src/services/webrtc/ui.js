@@ -1,5 +1,45 @@
 export function createRemoteVideoManager(remoteVideos) {
+  function ensureSpinnerStyles() {
+    if (document.getElementById('tandem-spinner-styles')) {
+      return;
+    }
+
+    const style = document.createElement('style');
+    style.id = 'tandem-spinner-styles';
+    style.textContent = `
+      @keyframes tandem-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      @keyframes tandem-pulse {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 1; }
+      }
+      @keyframes tandem-dot {
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+        40% { transform: scale(1); opacity: 1; }
+      }
+      .tandem-dots {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        justify-content: center;
+      }
+      .tandem-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #38bdf8;
+        animation: tandem-dot 1.2s infinite ease-in-out;
+      }
+      .tandem-dot:nth-child(2) { animation-delay: 0.2s; }
+      .tandem-dot:nth-child(3) { animation-delay: 0.4s; }
+    `;
+    document.head.appendChild(style);
+  }
+
   function createLoadingSpinner() {
+    ensureSpinnerStyles();
     // Create a more visually appealing spinner using CSS
     const spinner = document.createElement('div');
     spinner.className = 'tandem-spinner';
@@ -13,6 +53,14 @@ export function createRemoteVideoManager(remoteVideos) {
       margin-bottom: 12px;
     `;
     return spinner;
+  }
+
+  function createWaitingDots() {
+    ensureSpinnerStyles();
+    const dots = document.createElement('div');
+    dots.className = 'tandem-dots';
+    dots.innerHTML = '<span class="tandem-dot"></span><span class="tandem-dot"></span><span class="tandem-dot"></span>';
+    return dots;
   }
   
   function makeDraggable(element) {
@@ -153,22 +201,7 @@ export function createRemoteVideoManager(remoteVideos) {
       overlay.appendChild(text);
     }
     
-    // Add spinner animation styles (only once)
-    if (!document.getElementById('tandem-spinner-styles')) {
-      const style = document.createElement('style');
-      style.id = 'tandem-spinner-styles';
-      style.textContent = `
-        @keyframes tandem-spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        @keyframes tandem-pulse {
-          0%, 100% { opacity: 0.3; }
-          50% { opacity: 1; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
+    ensureSpinnerStyles();
     
     container.appendChild(v);
     if (!overlay.parentElement) {
@@ -356,30 +389,29 @@ export function createRemoteVideoManager(remoteVideos) {
     const container = document.createElement('div');
     container.id = 'tandem-waiting-indicator';
     container.style.position = 'fixed';
-    container.style.bottom = '145px';
+    container.style.bottom = '24px';
     container.style.right = '20px';
-    container.style.width = '240px';
-    container.style.height = '160px';
+    container.style.padding = '8px 12px';
     container.style.zIndex = 999999;
-    container.style.border = '2px solid #00aaff';
-    container.style.borderRadius = '4px';
-    container.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    container.style.border = '1px solid rgba(56, 189, 248, 0.4)';
+    container.style.borderRadius = '999px';
+    container.style.backgroundColor = 'rgba(15, 23, 42, 0.9)';
     container.style.display = 'flex';
-    container.style.flexDirection = 'column';
     container.style.alignItems = 'center';
-    container.style.justifyContent = 'center';
-    container.style.color = '#fff';
-    container.style.fontSize = '14px';
+    container.style.gap = '8px';
+    container.style.color = '#e2e8f0';
+    container.style.fontSize = '12px';
     container.style.fontFamily = 'Arial, sans-serif';
     container.style.pointerEvents = 'none';
+    container.style.boxShadow = '0 6px 18px rgba(0, 0, 0, 0.35)';
     
-    const spinner = createLoadingSpinner();
+    const dots = createWaitingDots();
     const text = document.createElement('div');
-    text.textContent = 'Waiting for others...';
+    text.textContent = 'Party started • waiting for others';
     text.style.fontWeight = '500';
-    text.style.marginTop = '8px';
+    text.style.letterSpacing = '0.2px';
     
-    container.appendChild(spinner);
+    container.appendChild(dots);
     container.appendChild(text);
     document.body.appendChild(container);
   }

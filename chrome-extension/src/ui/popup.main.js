@@ -35,29 +35,43 @@ startStatusPolling();
 
 let lastShareLinkRoomId = null;
 let lastShareLink = null;
+let lastShortId = null;
+
+async function getOrCreateShortId(roomId) {
+  // Query the signaling server to get or create a short ID for this room
+  try {
+    // Get the server URL from config
+    const config = await import('../config.js').then(m => m.CONFIG);
+    const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
+    
+    // We'll fetch this from the server - it will create the mapping
+    // For now, we'll request via a special endpoint (we'll add this to the server)
+    const response = await fetch(`${serverUrl}/api/short-id/${encodeURIComponent(roomId)}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get short ID: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.shortId;
+  } catch (err) {
+    console.warn('[Popup] Could not get short ID from server, using fallback:', err);
+    // Fallback: generate a simple short ID client-side (not persistent)
+    return roomId.substring(0, 8);
+  }
+}
 
 function buildShareLink(roomId) {
-  return new Promise((resolve) => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      const fallbackUrl = 'https://www.netflix.com/browse';
-      let targetUrl = fallbackUrl;
-
-      const tabUrl = tabs && tabs[0] ? tabs[0].url : null;
-      if (tabUrl && tabUrl.startsWith('http')) {
-        targetUrl = tabUrl;
-      }
-
-      try {
-        let url = new URL(targetUrl);
-        if (!url.hostname.endsWith('netflix.com')) {
-          url = new URL(fallbackUrl);
-        }
-        url.searchParams.set('tandemRoom', roomId);
-        resolve(url.toString());
-      } catch (e) {
-        resolve(`${fallbackUrl}?tandemRoom=${encodeURIComponent(roomId)}`);
-      }
-    });
+  // Build a short URL instead of full Netflix URL
+  return new Promise(async (resolve) => {
+    try {
+      const config = await import('../config.js').then(m => m.CONFIG);
+      const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
+      const shortId = await getOrCreateShortId(roomId);
+      const shortUrl = `${serverUrl}/room/${shortId}`;
+      resolve(shortUrl);
+    } catch (err) {
+      console.error('[Popup] Error building share link:', err);
+      resolve(`https://watch.toper.dev/room/unknown`);
+    }
   });
 }
 
