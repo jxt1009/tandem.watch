@@ -68,7 +68,8 @@ export class SyncManager {
               lock: this.lock,
               onPlay: (vid) => this.broadcastPlay(vid),
               onPause: (vid) => this.broadcastPause(vid),
-              onSeek: (vid) => this.broadcastSeek(vid)
+              onSeek: (vid) => this.broadcastSeek(vid),
+              onPositionUpdate: (vid) => this.broadcastPosition(vid)
             });
             this.listeners = listeners;
             console.log('[SyncManager] Setup complete with pending sync applied');
@@ -191,7 +192,8 @@ export class SyncManager {
         lock: this.lock,
         onPlay: (vid) => this.broadcastPlay(vid),
         onPause: (vid) => this.broadcastPause(vid),
-        onSeek: (vid) => this.broadcastSeek(vid)
+        onSeek: (vid) => this.broadcastSeek(vid),
+        onPositionUpdate: (vid) => this.broadcastPosition(vid)
       });
       this.listeners = listeners;
       console.log('[SyncManager] Setup complete - ready to sync');
@@ -202,12 +204,13 @@ export class SyncManager {
 
   teardown() {
     console.log('[SyncManager] Tearing down sync manager');
-    if (this.listeners && this.listeners.video) {
-      const { video, handlePlay, handlePause, handleSeeked } = this.listeners;
+    if (this.listeners) {
+      const { video, handlePlay, handlePause, handleSeeked, cleanup } = this.listeners;
       try {
         video.removeEventListener('play', handlePlay);
         video.removeEventListener('pause', handlePause);
         video.removeEventListener('seeked', handleSeeked);
+        if (cleanup) cleanup(); // Clear the position update interval
         console.log('[SyncManager] Event listeners removed');
       } catch (e) { console.warn('[SyncManager] Error removing listeners:', e); }
       this.listeners = null;
@@ -265,6 +268,18 @@ export class SyncManager {
     console.log('[SyncManager] Broadcasting SEEK event at', video.currentTime);
     this.state.safeSendMessage({ 
       type: 'SEEK', 
+      currentTime: video.currentTime, 
+      isPlaying: !video.paused 
+    });
+  }
+
+  broadcastPosition(video) {
+    if (!this.isOnWatchPage()) {
+      return;
+    }
+    // Send continuous position update for live timestamp tracking
+    this.state.safeSendMessage({ 
+      type: 'POSITION_UPDATE', 
       currentTime: video.currentTime, 
       isPlaying: !video.paused 
     });

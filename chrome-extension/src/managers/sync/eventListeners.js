@@ -1,4 +1,4 @@
-export function attachPlaybackListeners({ video, state, isInitializedRef, lock, onPlay, onPause, onSeek }) {
+export function attachPlaybackListeners({ video, state, isInitializedRef, lock, onPlay, onPause, onSeek, onPositionUpdate }) {
   const handlePlay = () => {
     console.log('[EventListeners] Play event fired - checking conditions:', {
       isActive: state.isActive(),
@@ -38,10 +38,24 @@ export function attachPlaybackListeners({ video, state, isInitializedRef, lock, 
     onSeek(video);
   };
 
+  // Continuous position tracking (every 500ms)
+  const positionUpdateInterval = setInterval(() => {
+    if (state.isActive() && isInitializedRef.get() && !lock.isActive() && onPositionUpdate) {
+      onPositionUpdate(video);
+    }
+  }, 500);
+
   video.addEventListener('play', handlePlay);
   video.addEventListener('pause', handlePause);
   video.addEventListener('seeked', handleSeeked);
   console.log('[EventListeners] Event listeners attached to video element');
 
-  return { video, handlePlay, handlePause, handleSeeked };
+  // Return cleanup function along with listeners
+  return { 
+    video, 
+    handlePlay, 
+    handlePause, 
+    handleSeeked,
+    cleanup: () => clearInterval(positionUpdateInterval)
+  };
 }
