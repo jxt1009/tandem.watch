@@ -447,6 +447,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
       
       console.log('[Content Script] SPA navigation triggered');
+
+      // Fallback: if Netflix doesn't navigate, force a full reload
+      setTimeout(() => {
+        try {
+          const expected = new URL(request.url).pathname + new URL(request.url).search;
+          const current = window.location.pathname + window.location.search;
+          if (current !== expected) {
+            console.warn('[Content Script] SPA navigation did not complete, forcing full reload');
+            window.location.href = request.url;
+          }
+        } catch (e) {
+          window.location.href = request.url;
+        }
+      }, 800);
     } catch (e) {
       console.error('[Content Script] Failed to navigate via pushState, falling back to full reload:', e);
       window.location.href = request.url;
