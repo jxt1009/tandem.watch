@@ -129,9 +129,12 @@ export class SyncManager {
               const currentTimeSeconds = currentTime != null ? currentTime / 1000 : 0;
               console.log('[SyncManager] Broadcasting initial state as leader from', source + ':', currentTimeSeconds.toFixed(2) + 's', isPaused ? 'paused' : 'playing');
               
+              // Send full sync message with timestamp, not just play/pause
               this.state.safeSendMessage({ 
-                type: 'PLAY_PAUSE', 
-                control: isPaused ? 'pause' : 'play'
+                type: 'SEEK', 
+                currentTime: currentTimeSeconds,
+                isPlaying: !isPaused,
+                eventTimestamp: Date.now()
               });
             } catch (e) {
               console.error('[SyncManager] Error broadcasting leader state:', e);
