@@ -1,8 +1,10 @@
 export class URLSync {
-  constructor(stateManager, onWatchPageChange, onNavigateToWatch, onLeaveWatch) {
+  constructor(stateManager, onWatchPageChange, onNavigateToWatch, onLeaveWatch, netflixController) {
     this.stateManager = stateManager;
+    this.netflixController = netflixController;
     this.urlMonitorInterval = null;
     this.lastUrl = null;
+    this.lastVideoEndedTime = 0;
     this.onWatchPageChange = onWatchPageChange || (() => {});
     this.onNavigateToWatch = onNavigateToWatch || (() => {});
     this.onLeaveWatch = onLeaveWatch || (() => {});
@@ -62,9 +64,43 @@ export class URLSync {
       
       const state = this.stateManager.getState();
       
-      // Broadcast all Netflix URL changes to the party
-      // This keeps everyone synchronized on browse, title pages, etc.
-      if (state.partyActive) {
+      // For watch-to-watch transitions, check if previous video just ended (auto-advance)
+      // vs user manually skipping (should broadcast)
+      let shouldBroadcastUrl = !watchPageChanged;
+      
+      if (watchPageChanged && this.netflixController) {
+        // Get player state to check if video just ended
+        this.netflixController.getPlayerState().then(playerState => {
+          const wasAutoAdvance = playerState && playerState.justEnded;
+          if (wasAutoAdvance) {
+            console.log('[URLSync] Video just ended - this is likely Netflix auto-advance, not broadcasting');
+            this.lastVideoEndedTime = Date.now();
+          } else {
+            console.log('[URLSync] Manual watch-to-watch transition detected, allowing broadcast');
+            // Send the URL change if party is active
+            if (state.partyActive) {
+              console.log('[URLSync] Broadcasting manual episode skip to party:', currentPath);
+              this.stateManager.safeSendMessage({ 
+                type: 'URL_CHANGE', 
+                url: currentUrl 
+              });
+            }
+          }
+        }).catch(err => {
+          console.warn('[URLSync] Failed to check player state:', err);
+          // On error, assume it's safe to broadcast manual changes
+          if (state.partyActive && Date.now() - this.lastVideoEndedTime > 5000) {
+            console.log('[URLSync] Broadcasting watch-to-watch transition (player state check failed):', currentPath);
+            this.stateManager.safeSendMessage({ 
+              type: 'URL_CHANGE', 
+              url: currentUrl 
+            });
+          }
+        });
+        shouldBroadcastUrl = false; // Don't broadcast here, we're checking async
+      }
+      
+      if (state.partyActive && shouldBroadcastUrl) {
         console.log('[URLSync] Broadcasting URL change to party:', currentPath);
         this.stateManager.safeSendMessage({ 
           type: 'URL_CHANGE', 

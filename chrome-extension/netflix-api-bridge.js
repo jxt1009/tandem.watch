@@ -54,6 +54,33 @@
     getVolume: function() {
       const player = this.getPlayer();
       return player ? player.getVolume() : 1.0;
+    },
+    
+    getDuration: function() {
+      const player = this.getPlayer();
+      try {
+        if (player && player.getDuration) {
+          return player.getDuration();
+        }
+      } catch (e) {
+        console.warn('Failed to get duration:', e);
+      }
+      return null;
+    },
+    
+    getPlayerState: function() {
+      const player = this.getPlayer();
+      try {
+        if (!player) return null;
+        const currentTime = player.getCurrentTime();
+        const duration = player.getDuration ? player.getDuration() : null;
+        const isPaused = player.isPaused();
+        const justEnded = duration && currentTime && Math.abs(duration - currentTime) < 500;
+        return { currentTime, duration, isPaused, justEnded: justEnded || false };
+      } catch (e) {
+        console.warn('Failed to get player state:', e);
+        return null;
+      }
     }
   };
   

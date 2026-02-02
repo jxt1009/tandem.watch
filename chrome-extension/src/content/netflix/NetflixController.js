@@ -23,6 +23,8 @@ export class NetflixController {
   pause() { return this._sendCommand('pause'); }
   seek(timeMs) { return this._sendCommand('seek', [timeMs]); }
   getCurrentTime() { return this._sendCommand('getCurrentTime'); }
+  getDuration() { return this._sendCommand('getDuration'); }
+  getPlayerState() { return this._sendCommand('getPlayerState'); }
   isPaused() { return this._sendCommand('isPaused'); }
   setVolume(level) { return this._sendCommand('setVolume', [level]); }
   getVolume() { return this._sendCommand('getVolume'); }
