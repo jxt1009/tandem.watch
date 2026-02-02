@@ -391,6 +391,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Apply URL changes to all Netflix pages (browse, title, watch, etc.)
     const incomingUrl = new URL(request.url);
     const currentUrl = window.location.href;
+
+    // Prevent bouncing back to previous episode during auto-advance
+    if (window.location.pathname.startsWith('/watch')) {
+      try {
+        const transitionRaw = sessionStorage.getItem('tandem_watch_transition');
+        if (transitionRaw) {
+          const transition = JSON.parse(transitionRaw);
+          const withinWindow = Date.now() - transition.timestamp < 15000;
+          const isBounceBack = transition.from === request.url && transition.to === currentUrl;
+          if (withinWindow && isBounceBack) {
+            console.log('[Content Script] Ignoring URL change back to previous episode during auto-advance');
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[Content Script] Failed to check watch transition state:', e);
+      }
+    }
     
     // Don't navigate if we're already on this URL
     if (currentUrl === request.url) {

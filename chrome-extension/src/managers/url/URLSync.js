@@ -36,6 +36,15 @@ export class URLSync {
       // If we changed to a different /watch page, reinitialize sync
       if (watchPageChanged) {
         console.log('[URLSync] Watch page changed - triggering sync reinitialization');
+        try {
+          sessionStorage.setItem('tandem_watch_transition', JSON.stringify({
+            from: this.lastUrl,
+            to: currentUrl,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn('[URLSync] Failed to record watch transition:', e);
+        }
         this.onWatchPageChange();
       }
       
