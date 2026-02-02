@@ -6,6 +6,11 @@ export class URLSync {
     this.lastUrl = null;
     this.lastVideoEndedTime = 0;
     this.videoEndListener = null;
+    this.recentAutoAdvanceUrl = null; // Track recent auto-advance to suppress conflicting sync
+    this.recentAutoAdvanceTime = 0;
+    this.pendingAutoAdvanceUrl = null;
+    this.pendingAutoAdvanceTime = 0;
+    this.nextEpisodeObserver = null;
     this.onWatchPageChange = onWatchPageChange || (() => {});
     this.onNavigateToWatch = onNavigateToWatch || (() => {});
     this.onLeaveWatch = onLeaveWatch || (() => {});
@@ -15,8 +20,9 @@ export class URLSync {
   handleUrlChange() {
     const currentUrl = window.location.href;
     if (currentUrl !== this.lastUrl) {
-      console.log('[URLSync] URL changed from', this.lastUrl, 'to', currentUrl);
-      const lastPath = this.lastUrl ? new URL(this.lastUrl).pathname : '';
+      const previousUrl = this.lastUrl;
+      console.log('[URLSync] URL changed from', previousUrl, 'to', currentUrl);
+      const lastPath = previousUrl ? new URL(previousUrl).pathname : '';
       const currentPath = new URL(currentUrl).pathname;
       
       // Check if we navigated to a different /watch page or left /watch
@@ -41,7 +47,7 @@ export class URLSync {
         console.log('[URLSync] Watch page changed - triggering sync reinitialization');
         try {
           sessionStorage.setItem('tandem_watch_transition', JSON.stringify({
-            from: this.lastUrl,
+            from: previousUrl,
             to: currentUrl,
             timestamp: Date.now()
           }));
@@ -70,7 +76,8 @@ export class URLSync {
       // 1. Within 5 seconds of video ended event (credits skipped)
       // 2. When URL changes and video is >90% through (near end)
       const recentlyEnded = Date.now() - this.lastVideoEndedTime < 5000;
-      let isLikelyAutoAdvance = recentlyEnded;
+      const recentlyPrompted = this.pendingAutoAdvanceUrl === previousUrl && (Date.now() - this.pendingAutoAdvanceTime < 60000);
+      let isLikelyAutoAdvance = recentlyEnded || recentlyPrompted;
       
       // Also check if video is near the end when URL changes
       if (!isLikelyAutoAdvance && watchPageChanged && this.netflixController) {
@@ -80,9 +87,16 @@ export class URLSync {
             if (percentComplete > 0.9) {
               console.log('[URLSync] URL changed at', (percentComplete * 100).toFixed(1) + '% of video - likely auto-advance');
               this.lastVideoEndedTime = Date.now();
+              this.recentAutoAdvanceUrl = previousUrl;
+              this.recentAutoAdvanceTime = Date.now();
             }
           }
         }).catch(() => {});
+      }
+      
+      if (isLikelyAutoAdvance) {
+        this.recentAutoAdvanceUrl = previousUrl;
+        this.recentAutoAdvanceTime = Date.now();
       }
       
       let shouldBroadcastUrl = !watchPageChanged || (watchPageChanged && !isLikelyAutoAdvance);
@@ -159,6 +173,26 @@ export class URLSync {
       }
     };
     setupVideoListener();
+
+    const recordNextEpisodePrompt = () => {
+      const button = document.querySelector('[data-uia="next-episode-seamless-button"]');
+      if (!button) return;
+      const now = Date.now();
+      if (now - this.pendingAutoAdvanceTime < 2000) return;
+      this.pendingAutoAdvanceUrl = this.lastUrl;
+      this.pendingAutoAdvanceTime = now;
+      console.log('[URLSync] Next episode prompt detected - marking pending auto-advance');
+    };
+
+    // Observe DOM for the next-episode prompt button
+    if (this.nextEpisodeObserver) {
+      this.nextEpisodeObserver.disconnect();
+    }
+    this.nextEpisodeObserver = new MutationObserver(() => recordNextEpisodePrompt());
+    if (document.body) {
+      this.nextEpisodeObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    }
+    recordNextEpisodePrompt();
   }
   
   stop() {
@@ -173,6 +207,11 @@ export class URLSync {
       const videos = document.querySelectorAll('video');
       videos.forEach(video => video.removeEventListener('ended', this.videoEndListener));
       this.videoEndListener = null;
+    }
+
+    if (this.nextEpisodeObserver) {
+      this.nextEpisodeObserver.disconnect();
+      this.nextEpisodeObserver = null;
     }
     
     window.removeEventListener('popstate', this.handleUrlChange);
@@ -200,5 +239,32 @@ export class URLSync {
       if (Date.now() - state.timestamp < 30000) { return state; }
     } catch (e) { console.error('[tandem] Failed to parse restoration state:', e); }
     return null;
+  }
+  
+  shouldSuppressSyncResponse(incomingUrl) {
+    if (!this.recentAutoAdvanceUrl || !incomingUrl) return false;
+    
+    const timeSinceAutoAdvance = Date.now() - this.recentAutoAdvanceTime;
+    if (timeSinceAutoAdvance > 30000) return false; // Auto-advance window expired
+    
+    // Extract episode IDs to compare
+    const incomingEpisodeId = this.extractEpisodeId(incomingUrl);
+    const autoAdvancedFromId = this.extractEpisodeId(this.recentAutoAdvanceUrl);
+    
+    if (incomingEpisodeId === autoAdvancedFromId) {
+      console.log(`[URLSync] Suppressing sync response - would revert auto-advance from ${incomingEpisodeId} (${timeSinceAutoAdvance}ms old)`);
+      return true;
+    }
+    return false;
+  }
+  
+  extractEpisodeId(url) {
+    if (!url) return null;
+    try {
+      const urlObj = new URL(url);
+      return urlObj.searchParams.get('trackId') || urlObj.pathname;
+    } catch (e) {
+      return null;
+    }
   }
 }

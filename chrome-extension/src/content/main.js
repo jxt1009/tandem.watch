@@ -83,6 +83,7 @@ const handleLeaveWatch = () => {
 };
 
 const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch, netflixController);
+syncManager.setUrlSync(urlSync);
 console.log('[Content Script] Managers initialized');
 
 function checkJoinFromLink() {

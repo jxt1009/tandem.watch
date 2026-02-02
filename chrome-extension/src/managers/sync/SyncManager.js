@@ -20,12 +20,14 @@ export class SyncManager {
     this.lastKnownTimeSeconds = 0;
     this.videoMonitorInterval = null;
     this.activeVideo = null;
+    this.urlSync = null;
 
     this.remote = createRemoteHandlers({
       state: this.state,
       netflix: this.netflix,
       lock: this.lock,
       isInitializedRef: this.isInitializedRef,
+      urlSync: () => this.urlSync,
       shouldAcceptLateSync: () => {
         if (!this.initialSyncRequestAt) return false;
         return (Date.now() - this.initialSyncRequestAt) < this.initialSyncWindowMs;
@@ -34,6 +36,10 @@ export class SyncManager {
         this.initialSyncRequestAt = 0;
       }
     });
+  }
+
+  setUrlSync(urlSync) {
+    this.urlSync = urlSync;
   }
 
   async setup() {

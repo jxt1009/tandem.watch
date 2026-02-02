@@ -1,4 +1,4 @@
-export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, shouldAcceptLateSync, onInitialSyncApplied }) {
+export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, urlSync, shouldAcceptLateSync, onInitialSyncApplied }) {
   async function applyRemote(actionName, durationMs, actionFn) {
     lock.set(durationMs);
     try { await actionFn(); } catch (err) {
@@ -58,6 +58,12 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, s
       attemptSyncResponse(1);
     },
     async handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay = false) {
+      // Check if this sync would revert a recent auto-advance
+      const urlSyncInstance = urlSync?.();
+      if (urlSyncInstance && urlSyncInstance.shouldSuppressSyncResponse(url)) {
+        return;
+      }
+      
       if (isInitializedRef.get() && !shouldAcceptLateSync?.()) {
         console.log('[SyncManager] Already initialized, ignoring late SYNC_RESPONSE');
         return;
