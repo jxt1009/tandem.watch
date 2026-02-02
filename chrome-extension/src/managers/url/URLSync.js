@@ -27,12 +27,14 @@ export class URLSync {
       console.log('[URLSync] URL changed from', previousUrl, 'to', currentUrl);
       const lastPath = normalizedPreviousUrl ? new URL(normalizedPreviousUrl).pathname : '';
       const currentPath = new URL(normalizedCurrentUrl).pathname;
+      const lastWatchKey = this.getWatchKey(normalizedPreviousUrl);
+      const currentWatchKey = this.getWatchKey(normalizedCurrentUrl);
       
       // Check if we navigated to a different /watch page or left /watch
       const wasOnWatch = lastPath.startsWith('/watch');
       const wasOnBrowse = lastPath.startsWith('/browse');
       const nowOnWatch = currentPath.startsWith('/watch');
-      const watchPageChanged = wasOnWatch && nowOnWatch && lastPath !== currentPath;
+      const watchPageChanged = wasOnWatch && nowOnWatch && lastWatchKey !== currentWatchKey;
       const navigatedToWatch = !wasOnWatch && nowOnWatch;
       const navigatedFromBrowseToWatch = wasOnBrowse && nowOnWatch;
       const leftWatch = wasOnWatch && !nowOnWatch;
@@ -236,6 +238,18 @@ export class URLSync {
       const trackId = parsed.searchParams.get('trackId');
       const normalized = trackId ? `${path}?trackId=${encodeURIComponent(trackId)}` : path;
       return parsed.origin + normalized;
+    } catch (e) {
+      return url;
+    }
+  }
+
+  getWatchKey(url) {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url);
+      if (!parsed.pathname.startsWith('/watch')) return parsed.pathname;
+      const trackId = parsed.searchParams.get('trackId');
+      return trackId ? `${parsed.pathname}?trackId=${trackId}` : parsed.pathname;
     } catch (e) {
       return url;
     }
