@@ -35,7 +35,9 @@ async function loadUsername() {
 }
 
 function generateDefaultUsername() {
-  const suffix = Math.random().toString(36).slice(2, 6);
+  const array = new Uint32Array(1);
+  crypto.getRandomValues(array);
+  const suffix = array[0].toString(36).slice(0, 4);
   return `user-${suffix}`;
 }
 
@@ -73,9 +75,10 @@ async function saveUsername() {
 let statusEl, statusText, statusControls, controlsSection, joinSection, partyInfo, statsSection, videoSection;
 let startBtn, stopBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
 let userDisplay, localTimeEl, syncStatusEl, remoteUsersList, localVideo, remoteVideo;
-let copyLinkBtn, copyCodeBtn, saveUsernameBtn, serverUrlEl;
+let copyLinkBtn, copyCodeBtn, copyPinBtn, saveUsernameBtn, serverUrlEl;
 let usernameLabel, usernameContainer, editUsernameBtn;
 let toggleMicBtn, toggleVideoBtn;
+let roomPinInput, roomPinDisplay;
 let listenersBound = false;
 
 function initializeDOMElements() {
@@ -101,6 +104,7 @@ function initializeDOMElements() {
   remoteVideo = document.getElementById('remote-video');
   copyLinkBtn = document.getElementById('copy-link-btn');
   copyCodeBtn = document.getElementById('copy-code-btn');
+  copyPinBtn = document.getElementById('copy-pin-btn');
   saveUsernameBtn = document.getElementById('save-username-btn');
   serverUrlEl = document.getElementById('server-url');
   usernameLabel = document.getElementById('user-display');
@@ -108,6 +112,8 @@ function initializeDOMElements() {
   editUsernameBtn = document.getElementById('edit-username-btn');
   toggleMicBtn = document.getElementById('toggle-mic-btn');
   toggleVideoBtn = document.getElementById('toggle-video-btn');
+  roomPinInput = document.getElementById('room-pin-input');
+  roomPinDisplay = document.getElementById('room-pin-display');
 }
 
 // Import and display server URL from config
@@ -165,14 +171,14 @@ async function getOrCreateShortId(roomId) {
   }
 }
 
-function buildShareLink(roomId) {
-  // Build a short URL instead of full Netflix URL
+function buildShareLink(roomId, pin) {
+  // Build a short URL with PIN in path: /room/shortId/pin
   return new Promise(async (resolve) => {
     try {
       const config = CONFIG;
       const serverUrl = config.WS.URL.replace('wss://', 'https://').replace('/ws', '');
       const shortId = await getOrCreateShortId(roomId);
-      const shortUrl = `${serverUrl}/room/${shortId}`;
+      const shortUrl = `${serverUrl}/room/${shortId}${pin ? '/' + pin : ''}`;
       resolve(shortUrl);
     } catch (err) {
       console.error('[Popup] Error building share link:', err);
@@ -188,18 +194,25 @@ function updateShareLink() {
     if (roomCodeDisplay && lastShortId) {
       roomCodeDisplay.textContent = lastShortId;
     }
+    if (roomPinDisplay && status.pin) {
+      roomPinDisplay.textContent = status.pin;
+    }
     return;
   }
 
-  buildShareLink(status.roomId).then((link) => {
+  buildShareLink(status.roomId, status.pin).then((link) => {
     lastShareLinkRoomId = status.roomId;
     lastShareLink = link;
     shareLinkEl.textContent = link;
-    // Extract short ID from link
-    const match = link.match(/\/room\/([a-z0-9]+)$/i);
+    // Extract short ID from link (before query params)
+    const match = link.match(/\/room\/([a-z0-9]+)/i);
     if (match && roomCodeDisplay) {
       lastShortId = match[1];
       roomCodeDisplay.textContent = lastShortId;
+    }
+    // Display PIN
+    if (roomPinDisplay && status.pin) {
+      roomPinDisplay.textContent = status.pin;
     }
   });
 }
@@ -230,11 +243,15 @@ async function joinRoomByCode() {
       roomId = await resolveRoomIdFromShortId(serverUrl, parsed.shortId);
     }
     
-    // Start party with the retrieved roomId and username
-    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: persistedUsername }, (response) => {
+    // Get PIN if provided
+    const pin = roomPinInput?.value?.trim() || null;
+    
+    // Start party with the retrieved roomId, username, and PIN
+    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: persistedUsername, pin }, (response) => {
       joinRoomBtn.disabled = false;
       if (response && response.success) {
         roomCodeInput.value = '';
+        if (roomPinInput) roomPinInput.value = '';
         setTimeout(updateStatus, 500);
       } else {
         alert('Error: ' + (response && response.error ? response.error : 'Failed to join party'));
@@ -334,6 +351,14 @@ function setupEventListeners() {
       navigator.clipboard.writeText(lastShortId);
       copyCodeBtn.textContent = '✓';
       setTimeout(() => { copyCodeBtn.textContent = 'Copy'; }, 1500);
+    });
+  }
+  if (copyPinBtn) {
+    copyPinBtn.addEventListener('click', () => {
+      if (!status.pin) return;
+      navigator.clipboard.writeText(status.pin);
+      copyPinBtn.textContent = '✓';
+      setTimeout(() => { copyPinBtn.textContent = 'Copy'; }, 1500);
     });
   }
   if (joinRoomBtn) {
@@ -520,7 +545,11 @@ function updateUI() {
 async function startParty() {
   startBtn.disabled = true;
   statusText.textContent = '⏳ Connecting...';
-  chrome.runtime.sendMessage({ type: 'START_PARTY', username: persistedUsername }, (response) => {
+  
+  // Auto-generate a 6-digit PIN
+  const pin = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  chrome.runtime.sendMessage({ type: 'START_PARTY', username: persistedUsername, pin }, (response) => {
     if (response.success) {
       setTimeout(updateStatus, 500);
     } else {
@@ -539,7 +568,7 @@ function stopParty() {
 
 function copyShareLink() {
   if (!status.roomId) return;
-  buildShareLink(status.roomId).then((link) => {
+  buildShareLink(status.roomId, status.pin).then((link) => {
     navigator.clipboard.writeText(link);
     if (copyLinkBtn) {
       copyLinkBtn.textContent = '✓';

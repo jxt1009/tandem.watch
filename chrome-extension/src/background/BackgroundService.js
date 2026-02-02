@@ -22,12 +22,15 @@ export class BackgroundService {
   }
 
   generateUserId() {
-    return 'user_' + Math.random().toString(36).substr(2, 9);
+    const array = new Uint32Array(2);
+    crypto.getRandomValues(array);
+    return 'user_' + array[0].toString(36) + array[1].toString(36).substring(0, 1);
   }
 
-  async startParty(inputRoomId, inputUsername) {
+  async startParty(inputRoomId, inputUsername, inputPin) {
     this.roomId = inputRoomId || 'default_room_' + Date.now();
     this.username = inputUsername || null; // Store username if provided
+    this.pin = inputPin || null; // Store PIN if provided
     this.intentionalDisconnect = false; // Reset flag so reconnection works
     return new Promise((resolve, reject) => {
       try {
@@ -75,7 +78,7 @@ export class BackgroundService {
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.missedHeartbeats = 0;
-        this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, username: this.username || null, timestamp: Date.now() }));
+        this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, username: this.username || null, pin: this.pin || null, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
             chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId }).catch(() => {});
@@ -221,10 +224,10 @@ export class BackgroundService {
         });
       }
       if (message.type === 'URL_CHANGE' && message.userId !== this.userId) {
-        console.log('[BackgroundService] Forwarding URL_CHANGE to content:', message.url, 'from', message.userId);
+        console.log('[BackgroundService] Forwarding URL_CHANGE to content:', message.url, 'time:', message.currentTime, 'from', message.userId);
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_URL_CHANGE', url: message.url, fromUserId: message.userId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_URL_CHANGE', url: message.url, currentTime: message.currentTime, fromUserId: message.userId }).catch(() => {});
           });
         });
       }
@@ -283,7 +286,9 @@ export class BackgroundService {
         this.ws.send(JSON.stringify({ 
           type: 'JOIN', 
           userId: this.userId, 
-          roomId: this.roomId, 
+          roomId: this.roomId,
+          username: this.username || null,
+          pin: this.pin || null,
           timestamp: Date.now() 
         }));
         this.startHeartbeat();
@@ -446,6 +451,6 @@ export class BackgroundService {
   }
 
   getStatus() {
-    return { isConnected: this.isConnected, roomId: this.roomId, userId: this.userId, hasLocalStream: !!this.localStream };
+    return { isConnected: this.isConnected, roomId: this.roomId, userId: this.userId, hasLocalStream: !!this.localStream, pin: this.pin };
   }
 }

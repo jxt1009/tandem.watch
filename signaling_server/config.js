@@ -36,7 +36,7 @@ export const config = {
   
   // Room cleanup
   roomCleanupInterval: 60000,     // Check for empty rooms every 60s
-  roomTTL: 3600000,               // 1 hour before room is archived
+  roomTTL: 14400000,              // 4 hours before room is archived
   
   // Redis key prefixes
   keys: {
@@ -48,6 +48,7 @@ export const config = {
     pubsub: (roomId) => `room:${roomId}:pubsub`,
     shortId: (roomId) => `shortid:${roomId}`,
     shortIdReverse: (shortId) => `shortid:rev:${shortId}`,
+    roomPin: (roomId) => `room:${roomId}:pin`,
   },
 };
 

@@ -63,9 +63,11 @@ function startReadyGate(roomId, targetTime, desiredPlay) {
 // ============= SHORT URL HELPERS =============
 
 function generateShortId() {
-  // Generate a short alphanumeric ID (6-8 chars)
-  // Using base36 (0-9, a-z) for maximum compactness
-  return Math.random().toString(36).substring(2, 9);
+  // Generate a cryptographically secure short alphanumeric ID (7 chars)
+  // Using crypto.getRandomValues() for true randomness
+  const array = new Uint32Array(2);
+  crypto.getRandomValues(array);
+  return array[0].toString(36).substring(0, 4) + array[1].toString(36).substring(0, 3);
 }
 
 async function getOrCreateShortId(roomId) {
@@ -82,9 +84,9 @@ async function getOrCreateShortId(roomId) {
     // Generate new short ID
     shortId = generateShortId();
     
-    // Store mapping both ways in Redis for fast lookup
-    await redis.client.set(key, shortId, 'EX', 7 * 24 * 60 * 60); // 7 days
-    await redis.client.set(config.keys.shortIdReverse(shortId), roomId, 'EX', 7 * 24 * 60 * 60);
+    // Store mapping both ways in Redis with 4-hour expiry
+    await redis.client.set(key, shortId, 'EX', 4 * 60 * 60); // 4 hours
+    await redis.client.set(config.keys.shortIdReverse(shortId), roomId, 'EX', 4 * 60 * 60);
   }
   
   // Cache in memory
@@ -209,10 +211,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Handle short URL redirects: /room/shortId
-  const roomMatch = req.url.match(/^\/room\/([a-z0-9]+)$/i);
+  // Handle short URL redirects: /room/shortId or /room/shortId/pin
+  const roomMatch = req.url.match(/^\/room\/([a-z0-9]+)(?:\/([0-9]{6}))?$/i);
   if (roomMatch) {
     const shortId = roomMatch[1];
+    const pin = roomMatch[2] || null;
     (async () => {
       try {
         const roomId = await getRoomIdFromShortId(shortId);
@@ -223,12 +226,12 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Redirect to Netflix with the roomId as query param
-        const netflixUrl = `https://www.netflix.com/?tandemRoom=${encodeURIComponent(roomId)}`;
+        // Redirect to Netflix with roomId and PIN (if present) as query params
+        const netflixUrl = `https://www.netflix.com/?tandemRoom=${encodeURIComponent(roomId)}${pin ? '&pin=' + pin : ''}`;
         res.writeHead(302, { Location: netflixUrl });
         res.end();
 
-        logger.debug({ shortId, roomId }, 'Redirected short URL to Netflix');
+        logger.debug({ shortId, roomId, pin: pin ? '****' : 'none' }, 'Redirected short URL to Netflix');
       } catch (err) {
         logger.error({ err, shortId }, 'Error resolving short URL');
         res.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -313,6 +316,7 @@ wss.on('connection', (ws, req) => {
         roomId = data.roomId;
         userId = data.userId;
         const username = data.username || null;
+        const pin = data.pin || null;
 
         if (!roomId || !userId) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'Missing roomId or userId' }));
@@ -322,7 +326,21 @@ wss.on('connection', (ws, req) => {
         // Create room if needed
         let room = await RoomRepository.getById(roomId);
         if (!room) {
+          // New room - store PIN if provided
+          if (pin) {
+            await redis.client.set(config.keys.roomPin(roomId), pin, 'EX', 4 * 60 * 60); // 4 hour expiry
+          }
           room = await RoomRepository.create(roomId, userId);
+        } else {
+          // Existing room - validate PIN if one was set
+          const storedPin = await redis.client.get(config.keys.roomPin(roomId));
+          if (storedPin) {
+            if (!pin || pin !== storedPin) {
+              ws.send(JSON.stringify({ type: 'ERROR', message: 'Invalid or missing PIN' }));
+              logger.warn({ userId, roomId }, 'JOIN rejected - incorrect PIN');
+              return;
+            }
+          }
         }
 
         // Create user
@@ -542,13 +560,15 @@ wss.on('connection', (ws, req) => {
         if (!roomId) return;
 
         const url = data.url;
+        const currentTime = data.currentTime;
         await RoomRepository.update(roomId, { currentUrl: url });
-        await EventRepository.log(roomId, 'URL_CHANGE', userId, { url });
+        await EventRepository.log(roomId, 'URL_CHANGE', userId, { url, currentTime });
 
         broadcastToRoom(roomId, {
           type: 'URL_CHANGE',
           userId,
           url,
+          currentTime,
           timestamp: Date.now(),
         });
       }

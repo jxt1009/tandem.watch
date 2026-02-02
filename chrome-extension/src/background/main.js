@@ -4,7 +4,7 @@ const backgroundService = new BackgroundService();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'START_PARTY') {
-    backgroundService.startParty(request.roomId, request.username).then(() => {
+    backgroundService.startParty(request.roomId, request.username, request.pin).then(() => {
       sendResponse({ success: true });
     }).catch(err => {
       sendResponse({ success: false, error: err.message });
@@ -154,10 +154,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'URL_CHANGE') {
-    console.log('[Background] Broadcasting URL_CHANGE:', request.url);
+    console.log('[Background] Broadcasting URL_CHANGE:', request.url, 'time:', request.currentTime);
     backgroundService.broadcastMessage({
       type: 'URL_CHANGE',
       url: request.url,
+      currentTime: request.currentTime,
       userId: backgroundService.userId,
       roomId: backgroundService.roomId
     });

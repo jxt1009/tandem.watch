@@ -101,11 +101,15 @@ function checkJoinFromLink() {
 
     console.log('[Content Script] Found tandemRoom in URL, joining room:', roomId);
 
+    // Extract PIN if present
+    const pin = url.searchParams.get('pin') || null;
+
     // Clean the URL so it doesn't keep re-triggering
     url.searchParams.delete('tandemRoom');
+    url.searchParams.delete('pin');
     history.replaceState({}, document.title, url.toString());
 
-    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId }, (response) => {
+    chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, pin }, (response) => {
       if (response && response.success) {
         console.log('[Content Script] Joined party from link successfully');
       } else {
@@ -397,7 +401,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'APPLY_URL_CHANGE') {
-    console.log('[Content Script] Received URL change request:', request.url, 'from', request.fromUserId);
+    console.log('[Content Script] Received URL change request:', request.url, 'time:', request.currentTime, 'from', request.fromUserId);
     
     // Mark this URL so we don't echo it back
     try {
@@ -436,6 +440,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Don't navigate if we're already on this URL
     if (currentUrl === request.url) {
       console.log('[Content Script] Already on this URL, skipping navigation');
+      
+      // But still sync to initiator's time if provided
+      if (request.currentTime !== undefined && request.currentTime !== null) {
+        console.log('[Content Script] Syncing to initiator\'s time:', request.currentTime);
+        syncManager.handleSeekPause(request.currentTime, request.fromUserId);
+      }
       return;
     }
     
@@ -444,6 +454,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const currentPath = window.location.pathname;
     if (currentPath.startsWith('/watch')) {
       urlSync.saveState();
+    }
+    
+    // Store the initiator's time for post-navigation sync
+    if (request.currentTime !== undefined && request.currentTime !== null) {
+      sessionStorage.setItem('tandem_pending_seek_time', request.currentTime.toString());
+      console.log('[Content Script] Storing pending seek time:', request.currentTime);
     }
     
     // Check if both current and target are /watch pages

@@ -118,9 +118,21 @@ export class URLSync {
       
       if (state.partyActive && shouldBroadcastUrl && !isRestoring && !isEchoingRemoteUrl) {
         console.log('[URLSync] Broadcasting URL change to party:', currentPath);
-        this.stateManager.safeSendMessage({ 
-          type: 'URL_CHANGE', 
-          url: normalizedCurrentUrl || currentUrl 
+        
+        // Get current time to sync all members to initiator's position
+        this.netflixController.getPlayerState().then(playerState => {
+          const currentTime = playerState?.currentTime || 0;
+          this.stateManager.safeSendMessage({ 
+            type: 'URL_CHANGE', 
+            url: normalizedCurrentUrl || currentUrl,
+            currentTime: currentTime
+          });
+        }).catch(err => {
+          console.warn('[URLSync] Failed to get current time, broadcasting without it:', err);
+          this.stateManager.safeSendMessage({ 
+            type: 'URL_CHANGE', 
+            url: normalizedCurrentUrl || currentUrl
+          });
         });
       } else if (isRestoring) {
         console.log('[URLSync] Skipping URL broadcast - restoration in progress');

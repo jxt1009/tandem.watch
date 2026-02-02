@@ -62,6 +62,25 @@ export class SyncManager {
       console.log('[SyncManager] Video element found, setting up event listeners');
       this.activeVideo = video;
       
+      // Check for pending seek time from URL change (episode selection)
+      const pendingSeekTime = sessionStorage.getItem('tandem_pending_seek_time');
+      if (pendingSeekTime) {
+        try {
+          const seekTime = parseFloat(pendingSeekTime);
+          console.log('[SyncManager] Applying pending seek from URL initiator:', seekTime);
+          sessionStorage.removeItem('tandem_pending_seek_time');
+          
+          // Wait for video to be ready, then seek to initiator's position
+          await this.waitForVideoReady(video);
+          this.lock.set(2000);
+          await this.netflix.seek(seekTime * 1000);
+          console.log('[SyncManager] Seeked to initiator time:', seekTime);
+        } catch (e) {
+          console.error('[SyncManager] Error applying pending seek time:', e);
+          sessionStorage.removeItem('tandem_pending_seek_time');
+        }
+      }
+      
       // Check for pending sync from URL navigation
       const pendingSyncStr = sessionStorage.getItem('tandem_pending_sync');
       if (pendingSyncStr) {
