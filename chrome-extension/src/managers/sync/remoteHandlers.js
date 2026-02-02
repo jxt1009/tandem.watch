@@ -134,10 +134,11 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, u
         return;
       }
 
-      // If sync returns a near-zero timestamp, wait briefly for Netflix resume
+      // If sync returns a near-zero timestamp AND is paused, wait briefly for Netflix resume
       // and prefer local progress to avoid resetting watch history.
       // This handles cases where room state is default or stale.
-      if (currentTime <= 2) {
+      // But if remote is playing, trust their position even if low.
+      if (currentTime < 0.5 && !isPlaying) {
         try {
           console.log('[SyncManager] Received near-zero sync (', currentTime.toFixed(2) + 's), checking for local resume position from', fromUserId);
           const waitForLocalResume = async () => {

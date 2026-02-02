@@ -399,6 +399,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'APPLY_URL_CHANGE') {
     console.log('[Content Script] Received URL change request:', request.url, 'from', request.fromUserId);
     
+    // Mark this URL so we don't echo it back
+    try {
+      const normalized = urlSync.normalizeUrl(request.url);
+      sessionStorage.setItem('tandem_last_remote_url', normalized);
+      setTimeout(() => sessionStorage.removeItem('tandem_last_remote_url'), 2000);
+    } catch (e) {}
+    
     if (stateManager.restoringPartyState) {
       console.log('[Content Script] Ignoring URL change - currently restoring party state');
       return;

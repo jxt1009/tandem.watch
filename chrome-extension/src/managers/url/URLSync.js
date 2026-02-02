@@ -111,12 +111,22 @@ export class URLSync {
         console.log('[URLSync] Auto-advance detected, not broadcasting');
       }
       
-      if (state.partyActive && shouldBroadcastUrl) {
+      // Don't broadcast URL if we're in the middle of restoration or if this was triggered by a remote URL change
+      const isRestoring = sessionStorage.getItem('tandem_pending_sync') !== null;
+      const recentRemoteUrlChange = sessionStorage.getItem('tandem_last_remote_url');
+      const isEchoingRemoteUrl = recentRemoteUrlChange === normalizedCurrentUrl;
+      
+      if (state.partyActive && shouldBroadcastUrl && !isRestoring && !isEchoingRemoteUrl) {
         console.log('[URLSync] Broadcasting URL change to party:', currentPath);
         this.stateManager.safeSendMessage({ 
           type: 'URL_CHANGE', 
           url: normalizedCurrentUrl || currentUrl 
         });
+      } else if (isRestoring) {
+        console.log('[URLSync] Skipping URL broadcast - restoration in progress');
+      } else if (isEchoingRemoteUrl) {
+        console.log('[URLSync] Skipping URL broadcast - echoing remote URL change');
+        sessionStorage.removeItem('tandem_last_remote_url');
       }
       
       // If someone leaves /watch, pause the video for everyone
