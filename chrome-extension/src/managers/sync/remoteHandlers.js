@@ -215,21 +215,25 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, u
       });
     },
     async handlePlaybackControl(control, currentTime, fromUserId, eventTimestamp) {
-      console.log('[SyncManager] Remote', control.toUpperCase(), 'from', fromUserId);
+      console.log('[SyncManager] Remote', control.toUpperCase(), 'from', fromUserId, 'at', currentTime?.toFixed(2) + 's');
       const adjustedTime = applyLatencyCompensation(currentTime, control === 'play', eventTimestamp);
 
       await applyRemote(control, 1000, async () => {
-        // Only apply play/pause, don't seek
-        // Position is synced separately via SEEK and POSITION_UPDATE messages
-        if (control === 'play') {
-          if (Number.isFinite(adjustedTime)) {
-            const localTimeMs = await netflix.getCurrentTime();
-            const localTime = Number.isFinite(localTimeMs) ? (localTimeMs / 1000) : null;
-            if (localTime != null && Math.abs(localTime - adjustedTime) > 0.75) {
-              console.log('[SyncManager] Latency compensation: nudging to', adjustedTime.toFixed(2) + 's before play');
-              await netflix.seek(adjustedTime * 1000);
-            }
+        // Sync position first if provided
+        if (Number.isFinite(adjustedTime) && adjustedTime > 0) {
+          const localTimeMs = await netflix.getCurrentTime();
+          const localTime = Number.isFinite(localTimeMs) ? (localTimeMs / 1000) : null;
+          const drift = localTime != null ? Math.abs(localTime - adjustedTime) : 999;
+          
+          // Lower threshold to 0.5s for tighter sync
+          if (drift > 0.5) {
+            console.log('[SyncManager] Syncing position before', control, '- drift:', drift.toFixed(2) + 's, seeking to', adjustedTime.toFixed(2) + 's');
+            await netflix.seek(adjustedTime * 1000);
           }
+        }
+        
+        // Then apply play/pause
+        if (control === 'play') {
           await netflix.play();
         } else {
           await netflix.pause();

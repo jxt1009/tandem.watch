@@ -102,6 +102,9 @@ export class WebRTCManager {
     if (type === 'JOIN' && from && from !== state.userId) {
       console.log('[WebRTCManager] Dispatching to handleJoin');
       await this.signalingHandlers.handleJoin(from);
+    } else if (type === 'USER_JOINED' && from && from !== state.userId) {
+      console.log('[WebRTCManager] Dispatching to handleJoin (USER_JOINED)');
+      await this.signalingHandlers.handleJoin(from);
     } else if (type === 'OFFER' && message.offer && from && from !== state.userId) {
       console.log('[WebRTCManager] Dispatching to handleOffer');
       await this.signalingHandlers.handleOffer(from, message.offer);

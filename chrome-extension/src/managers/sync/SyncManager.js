@@ -325,32 +325,56 @@ export class SyncManager {
     return window.location.pathname.startsWith('/watch');
   }
 
-  broadcastPlay(video) {
+  async broadcastPlay(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring PLAY event - not on /watch page');
       return;
     }
-    console.log('[SyncManager] Broadcasting PLAY event');
-    this.state.safeSendMessage({ 
-      type: 'PLAY_PAUSE', 
-      control: 'play',
-      currentTime: video?.currentTime || 0,
-      eventTimestamp: Date.now()
-    });
+    try {
+      const currentTimeMs = await this.netflix.getCurrentTime();
+      const currentTime = currentTimeMs != null ? currentTimeMs / 1000 : (video?.currentTime || 0);
+      console.log('[SyncManager] Broadcasting PLAY event at', currentTime.toFixed(2) + 's');
+      this.state.safeSendMessage({ 
+        type: 'PLAY_PAUSE', 
+        control: 'play',
+        currentTime: currentTime,
+        eventTimestamp: Date.now()
+      });
+    } catch (e) {
+      console.warn('[SyncManager] Error broadcasting play:', e);
+      this.state.safeSendMessage({ 
+        type: 'PLAY_PAUSE', 
+        control: 'play',
+        currentTime: video?.currentTime || 0,
+        eventTimestamp: Date.now()
+      });
+    }
   }
 
-  broadcastPause(video) {
+  async broadcastPause(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring PAUSE event - not on /watch page');
       return;
     }
-    console.log('[SyncManager] Broadcasting PAUSE event');
-    this.state.safeSendMessage({ 
-      type: 'PLAY_PAUSE', 
-      control: 'pause',
-      currentTime: video?.currentTime || 0,
-      eventTimestamp: Date.now()
-    });
+    try {
+      const currentTimeMs = await this.netflix.getCurrentTime();
+      const currentTime = currentTimeMs != null ? currentTimeMs / 1000 : (video?.currentTime || 0);
+      console.log('[SyncManager] Broadcasting PAUSE event at', currentTime.toFixed(2) + 's');
+      this.state.safeSendMessage({ 
+        type: 'PLAY_PAUSE', 
+        control: 'pause',
+        currentTime: currentTime,
+        eventTimestamp: Date.now()
+      });
+    } catch (e) {
+      console.warn('[SyncManager] Error broadcasting pause:', e);
+      this.state.safeSendMessage({ 
+        type: 'PLAY_PAUSE', 
+        control: 'pause',
+        currentTime: video?.currentTime || 0,
+        eventTimestamp: Date.now()
+      });
+    }
   }
 
   broadcastSeek(video) {
