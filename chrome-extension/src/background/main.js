@@ -89,6 +89,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       type: 'PLAY_PAUSE',
       control: request.control,
       currentTime: request.currentTime,
+      eventTimestamp: request.eventTimestamp,
       userId: backgroundService.userId,
       roomId: backgroundService.roomId
     });
@@ -111,6 +112,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       type: 'SEEK',
       currentTime: request.currentTime,
       isPlaying: request.isPlaying,
+      eventTimestamp: request.eventTimestamp,
+      userId: backgroundService.userId,
+      roomId: backgroundService.roomId
+    });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'READY') {
+    backgroundService.broadcastMessage({
+      type: 'READY',
+      targetTime: request.targetTime,
+      userId: backgroundService.userId,
+      roomId: backgroundService.roomId
+    });
+    sendResponse({ success: true });
+  }
+
+  if (request.type === 'HOST_HEARTBEAT') {
+    backgroundService.broadcastMessage({
+      type: 'HOST_HEARTBEAT',
+      currentTime: request.currentTime,
+      isPlaying: request.isPlaying,
+      eventTimestamp: request.eventTimestamp,
       userId: backgroundService.userId,
       roomId: backgroundService.roomId
     });

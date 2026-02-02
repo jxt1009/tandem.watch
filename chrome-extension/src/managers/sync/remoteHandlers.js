@@ -6,6 +6,14 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, u
     }
   }
 
+  function applyLatencyCompensation(currentTime, isPlaying, eventTimestamp) {
+    if (!Number.isFinite(currentTime)) return currentTime;
+    if (!eventTimestamp || !Number.isFinite(eventTimestamp)) return currentTime;
+    if (!isPlaying) return currentTime;
+    const elapsedMs = Math.max(0, Date.now() - eventTimestamp);
+    return currentTime + (elapsedMs / 1000);
+  }
+
   return {
     async handleRequestSync(fromUserId, respectAutoPlay = false) {
       const currentUrl = window.location.href;
@@ -205,29 +213,95 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, u
         });
       });
     },
-    async handlePlaybackControl(control, currentTime, fromUserId) {
+    async handlePlaybackControl(control, currentTime, fromUserId, eventTimestamp) {
       console.log('[SyncManager] Remote', control.toUpperCase(), 'from', fromUserId);
-      
+      const adjustedTime = applyLatencyCompensation(currentTime, control === 'play', eventTimestamp);
+
       await applyRemote(control, 1000, async () => {
         // Only apply play/pause, don't seek
         // Position is synced separately via SEEK and POSITION_UPDATE messages
         if (control === 'play') {
+          if (Number.isFinite(adjustedTime)) {
+            const localTimeMs = await netflix.getCurrentTime();
+            const localTime = Number.isFinite(localTimeMs) ? (localTimeMs / 1000) : null;
+            if (localTime != null && Math.abs(localTime - adjustedTime) > 0.75) {
+              console.log('[SyncManager] Latency compensation: nudging to', adjustedTime.toFixed(2) + 's before play');
+              await netflix.seek(adjustedTime * 1000);
+            }
+          }
           await netflix.play();
         } else {
           await netflix.pause();
         }
       });
     },
-    async handleSeek(currentTime, isPlaying, fromUserId) {
-      console.log('[SyncManager] Remote SEEK to', currentTime.toFixed(2) + 's', isPlaying ? 'playing' : 'paused', 'from', fromUserId);
-      
+    async handleSeek(currentTime, isPlaying, fromUserId, eventTimestamp) {
+      const adjustedTime = applyLatencyCompensation(currentTime, isPlaying, eventTimestamp);
+      console.log('[SyncManager] Remote SEEK to', adjustedTime.toFixed(2) + 's', isPlaying ? 'playing' : 'paused', 'from', fromUserId);
+
       await applyRemote('seek', 1200, async () => {
-        await netflix.seek(currentTime * 1000);
+        await netflix.seek(adjustedTime * 1000);
         const isPaused = await netflix.isPaused();
         
         if (isPlaying && isPaused) {
           await netflix.play();
         } else if (!isPlaying && !isPaused) {
+          await netflix.pause();
+        }
+      });
+    },
+    async handleSeekPause(currentTime, fromUserId) {
+      console.log('[SyncManager] Remote SEEK_PAUSE to', currentTime.toFixed(2) + 's from', fromUserId);
+
+      await applyRemote('seek-pause', 1500, async () => {
+        await netflix.seek(currentTime * 1000);
+        await netflix.pause();
+
+        const waitForReady = () => new Promise((resolve) => {
+          const video = netflix.getVideoElement();
+          if (!video) {
+            setTimeout(resolve, 400);
+            return;
+          }
+          if (video.readyState >= 3) {
+            resolve();
+            return;
+          }
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            video.removeEventListener('canplaythrough', done);
+            video.removeEventListener('canplay', done);
+            resolve();
+          };
+          video.addEventListener('canplaythrough', done, { once: true });
+          video.addEventListener('canplay', done, { once: true });
+          setTimeout(done, 4000);
+        });
+
+        await waitForReady();
+        state.safeSendMessage({ type: 'READY', targetTime: currentTime });
+      });
+    },
+    async handleHostHeartbeat(currentTime, isPlaying, fromUserId, eventTimestamp) {
+      if (!Number.isFinite(currentTime)) return;
+      const adjustedTime = applyLatencyCompensation(currentTime, isPlaying, eventTimestamp);
+
+      const localTimeMs = await netflix.getCurrentTime();
+      const localTime = Number.isFinite(localTimeMs) ? (localTimeMs / 1000) : null;
+      if (localTime == null) return;
+
+      const drift = adjustedTime - localTime;
+      if (Math.abs(drift) < 0.5) return;
+
+      await applyRemote('heartbeat-catchup', 600, async () => {
+        console.log('[SyncManager] Host heartbeat correction:', drift.toFixed(2) + 's');
+        await netflix.seek(adjustedTime * 1000);
+        const localPaused = await netflix.isPaused();
+        if (isPlaying && localPaused) {
+          await netflix.play();
+        } else if (!isPlaying && !localPaused) {
           await netflix.pause();
         }
       });

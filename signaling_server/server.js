@@ -17,6 +17,48 @@ import {
 const wsConnections = new Map(); // WebSocket -> { userId, roomId, peerId }
 const localRoomSubscribers = new Map(); // roomId -> Set of subscribed WebSockets
 const roomToShortId = new Map(); // roomId -> shortId (in-memory cache)
+const roomReadyStates = new Map(); // roomId -> { expectedUserIds:Set, readyUserIds:Set, targetTime, desiredPlay, createdAt, timeoutId }
+
+function getConnectedUserIds(roomId) {
+  return new Set(
+    Array.from(wsConnections.values())
+      .filter(info => info.roomId === roomId)
+      .map(info => info.userId)
+  );
+}
+
+function startReadyGate(roomId, targetTime, desiredPlay) {
+  const existing = roomReadyStates.get(roomId);
+  if (existing?.timeoutId) clearTimeout(existing.timeoutId);
+
+  const expectedUserIds = getConnectedUserIds(roomId);
+  const state = {
+    expectedUserIds,
+    readyUserIds: new Set(),
+    targetTime,
+    desiredPlay,
+    createdAt: Date.now(),
+    timeoutId: null,
+  };
+  roomReadyStates.set(roomId, state);
+
+  state.timeoutId = setTimeout(async () => {
+    const gate = roomReadyStates.get(roomId);
+    if (!gate) return;
+    if (gate.desiredPlay) {
+      await RoomRepository.update(roomId, { currentTime: gate.targetTime, isPlaying: true });
+      broadcastToRoom(roomId, {
+        type: 'PLAY_PAUSE',
+        userId: 'server',
+        control: 'play',
+        currentTime: gate.targetTime,
+        eventTimestamp: gate.createdAt,
+        timestamp: Date.now(),
+      });
+    }
+    roomReadyStates.delete(roomId);
+  }, 7000);
+}
 
 // ============= SHORT URL HELPERS =============
 
@@ -383,6 +425,9 @@ wss.on('connection', (ws, req) => {
         if (currentTime !== null) {
           payload.currentTime = currentTime;
         }
+        if (Number.isFinite(data.eventTimestamp)) {
+          payload.eventTimestamp = data.eventTimestamp;
+        }
 
         broadcastToRoom(roomId, payload);
       }
@@ -392,19 +437,67 @@ wss.on('connection', (ws, req) => {
 
         const currentTime = data.currentTime || 0;
         const isPlaying = data.isPlaying || false;
+        const eventTimestamp = Number.isFinite(data.eventTimestamp) ? data.eventTimestamp : null;
 
-        await RoomRepository.update(roomId, { currentTime, isPlaying });
+        await RoomRepository.update(roomId, { currentTime, isPlaying: false });
         if (userId) {
-          await UserRepository.update(userId, { currentTime, isPlaying });
+          await UserRepository.update(userId, { currentTime, isPlaying: false });
         }
 
         await EventRepository.log(roomId, 'SEEK', userId, { currentTime });
 
+        startReadyGate(roomId, currentTime, isPlaying);
+
         broadcastToRoom(roomId, {
-          type: 'SEEK',
+          type: 'SEEK_PAUSE',
+          userId,
+          currentTime,
+          eventTimestamp,
+          timestamp: Date.now(),
+        });
+      }
+
+      else if (type === 'READY') {
+        if (!roomId || !userId) return;
+        const gate = roomReadyStates.get(roomId);
+        if (!gate) return;
+
+        gate.readyUserIds.add(userId);
+        const expectedCount = gate.expectedUserIds.size || 1;
+        const requiredCount = Math.max(1, Math.ceil(expectedCount * 0.6));
+
+        if (gate.readyUserIds.size >= requiredCount) {
+          if (gate.timeoutId) clearTimeout(gate.timeoutId);
+          if (gate.desiredPlay) {
+            await RoomRepository.update(roomId, { currentTime: gate.targetTime, isPlaying: true });
+            broadcastToRoom(roomId, {
+              type: 'PLAY_PAUSE',
+              userId: 'server',
+              control: 'play',
+              currentTime: gate.targetTime,
+              eventTimestamp: gate.createdAt,
+              timestamp: Date.now(),
+            });
+          }
+          roomReadyStates.delete(roomId);
+        }
+      }
+
+      else if (type === 'HOST_HEARTBEAT') {
+        if (!roomId || !userId) return;
+
+        const currentTime = data.currentTime || 0;
+        const isPlaying = data.isPlaying || false;
+
+        await RoomRepository.update(roomId, { currentTime, isPlaying });
+        await UserRepository.update(userId, { currentTime, isPlaying });
+
+        broadcastToRoom(roomId, {
+          type: 'HOST_HEARTBEAT',
           userId,
           currentTime,
           isPlaying,
+          eventTimestamp: Number.isFinite(data.eventTimestamp) ? data.eventTimestamp : null,
           timestamp: Date.now(),
         });
       }

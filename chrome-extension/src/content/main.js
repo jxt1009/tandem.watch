@@ -338,6 +338,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 
+  if (request.type === 'ROOM_STATE') {
+    if (request.hostUserId) {
+      console.log('[Content Script] Room state received - hostUserId:', request.hostUserId);
+      syncManager.setHostUserId(request.hostUserId);
+    }
+  }
+
   if (request.type === 'PARTY_STOPPED') {
     console.log('[Content Script] Stopping party');
     stopVideoElementMonitoring();
@@ -367,7 +374,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
     console.log('[Content Script] Applying playback control:', request.control, 'at', request.currentTime, 'from', request.fromUserId);
-    syncManager.handlePlaybackControl(request.control, request.currentTime, request.fromUserId);
+    syncManager.handlePlaybackControl(request.control, request.currentTime, request.fromUserId, request.eventTimestamp);
   }
 
   // Passive sync removed - using event-based sync only
@@ -378,7 +385,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('[Content Script] Ignoring seek - not on /watch page');
       return;
     }
-    syncManager.handleSeek(request.currentTime, request.isPlaying, request.fromUserId);
+    syncManager.handleSeek(request.currentTime, request.isPlaying, request.fromUserId, request.eventTimestamp);
+  }
+
+  if (request.type === 'APPLY_SEEK_PAUSE') {
+    if (!window.location.pathname.startsWith('/watch')) {
+      console.log('[Content Script] Ignoring seek-pause - not on /watch page');
+      return;
+    }
+    syncManager.handleSeekPause(request.currentTime, request.fromUserId);
   }
 
   if (request.type === 'APPLY_URL_CHANGE') {
@@ -455,6 +470,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     console.log('[Content Script] Applying sync response from', request.fromUserId, 'URL:', request.url, request.respectAutoPlay ? '(respecting auto-play)' : '');
     syncManager.handleSyncResponse(request.currentTime, request.isPlaying, request.fromUserId, request.url, request.respectAutoPlay);
+  }
+
+  if (request.type === 'HOST_HEARTBEAT') {
+    if (!window.location.pathname.startsWith('/watch')) {
+      return;
+    }
+    syncManager.handleHostHeartbeat(request.currentTime, request.isPlaying, request.fromUserId, request.eventTimestamp);
   }
 
   if (request.type === 'REQUEST_INITIAL_SYNC_AND_PLAY') {

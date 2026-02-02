@@ -21,6 +21,8 @@ export class SyncManager {
     this.videoMonitorInterval = null;
     this.activeVideo = null;
     this.urlSync = null;
+    this.hostUserId = null;
+    this.heartbeatInterval = null;
 
     this.remote = createRemoteHandlers({
       state: this.state,
@@ -301,6 +303,7 @@ export class SyncManager {
     }
     this.activeVideo = null;
     this.isInitializedRef.set(false);
+    this.stopHostHeartbeat();
   }
 
   waitForVideo() {
@@ -327,7 +330,9 @@ export class SyncManager {
     console.log('[SyncManager] Broadcasting PLAY event');
     this.state.safeSendMessage({ 
       type: 'PLAY_PAUSE', 
-      control: 'play'
+      control: 'play',
+      currentTime: video?.currentTime || 0,
+      eventTimestamp: Date.now()
     });
   }
 
@@ -339,7 +344,9 @@ export class SyncManager {
     console.log('[SyncManager] Broadcasting PAUSE event');
     this.state.safeSendMessage({ 
       type: 'PLAY_PAUSE', 
-      control: 'pause'
+      control: 'pause',
+      currentTime: video?.currentTime || 0,
+      eventTimestamp: Date.now()
     });
   }
 
@@ -352,7 +359,8 @@ export class SyncManager {
     this.state.safeSendMessage({ 
       type: 'SEEK', 
       currentTime: video.currentTime, 
-      isPlaying: !video.paused 
+      isPlaying: !video.paused,
+      eventTimestamp: Date.now()
     });
   }
 
@@ -401,6 +409,50 @@ export class SyncManager {
     }
     return this.remote.handleSyncResponse(currentTime, isPlaying, fromUserId, url, respectAutoPlay);
   }
-  handlePlaybackControl(control, currentTime, fromUserId) { return this.remote.handlePlaybackControl(control, currentTime, fromUserId); }
-  handleSeek(currentTime, isPlaying, fromUserId) { return this.remote.handleSeek(currentTime, isPlaying, fromUserId); }
+  handlePlaybackControl(control, currentTime, fromUserId, eventTimestamp) { return this.remote.handlePlaybackControl(control, currentTime, fromUserId, eventTimestamp); }
+  handleSeek(currentTime, isPlaying, fromUserId, eventTimestamp) { return this.remote.handleSeek(currentTime, isPlaying, fromUserId, eventTimestamp); }
+  handleSeekPause(currentTime, fromUserId) { return this.remote.handleSeekPause(currentTime, fromUserId); }
+  handleHostHeartbeat(currentTime, isPlaying, fromUserId, eventTimestamp) { return this.remote.handleHostHeartbeat(currentTime, isPlaying, fromUserId, eventTimestamp); }
+
+  setHostUserId(hostUserId) {
+    this.hostUserId = hostUserId;
+    this.updateHostHeartbeat();
+  }
+
+  updateHostHeartbeat() {
+    const localUserId = this.state.getUserId();
+    if (this.hostUserId && localUserId && this.hostUserId === localUserId) {
+      this.startHostHeartbeat();
+    } else {
+      this.stopHostHeartbeat();
+    }
+  }
+
+  startHostHeartbeat() {
+    if (this.heartbeatInterval) return;
+    this.heartbeatInterval = setInterval(async () => {
+      if (!this.isOnWatchPage() || !this.isInitializedRef.get()) return;
+      const currentTimeMs = await this.netflix.getCurrentTime();
+      let currentTime = Number.isFinite(currentTimeMs) ? (currentTimeMs / 1000) : null;
+      if (currentTime == null) {
+        const video = this.netflix.getVideoElement();
+        currentTime = video?.currentTime || 0;
+      }
+      const video = this.netflix.getVideoElement();
+      const isPlaying = video ? !video.paused : true;
+      this.state.safeSendMessage({
+        type: 'HOST_HEARTBEAT',
+        currentTime,
+        isPlaying,
+        eventTimestamp: Date.now()
+      });
+    }, 3000);
+  }
+
+  stopHostHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
 }

@@ -175,11 +175,18 @@ export class BackgroundService {
           chrome.tabs.sendMessage(tab.id, { type: 'SIGNAL', message }).catch(() => {});
         });
       });
+      if (message.type === 'ROOM_STATE') {
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'ROOM_STATE', hostUserId: message.hostUserId }).catch(() => {});
+          });
+        });
+      }
       if (message.type === 'PLAY_PAUSE' && message.userId !== this.userId) {
         console.log('[BackgroundService] Forwarding PLAY_PAUSE to content:', message.control, 'at', message.currentTime, 'from', message.userId);
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_PLAYBACK_CONTROL', control: message.control, currentTime: message.currentTime, fromUserId: message.userId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_PLAYBACK_CONTROL', control: message.control, currentTime: message.currentTime, eventTimestamp: message.eventTimestamp, fromUserId: message.userId }).catch(() => {});
           });
         });
       }
@@ -194,7 +201,22 @@ export class BackgroundService {
         console.log('[BackgroundService] Forwarding SEEK to content:', message.currentTime, 'playing:', message.isPlaying, 'from', message.userId);
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_SEEK', currentTime: message.currentTime, isPlaying: message.isPlaying, fromUserId: message.userId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_SEEK', currentTime: message.currentTime, isPlaying: message.isPlaying, eventTimestamp: message.eventTimestamp, fromUserId: message.userId }).catch(() => {});
+          });
+        });
+      }
+      if (message.type === 'SEEK_PAUSE' && message.userId !== this.userId) {
+        console.log('[BackgroundService] Forwarding SEEK_PAUSE to content:', message.currentTime, 'from', message.userId);
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_SEEK_PAUSE', currentTime: message.currentTime, fromUserId: message.userId }).catch(() => {});
+          });
+        });
+      }
+      if (message.type === 'HOST_HEARTBEAT' && message.userId !== this.userId) {
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'HOST_HEARTBEAT', currentTime: message.currentTime, isPlaying: message.isPlaying, eventTimestamp: message.eventTimestamp, fromUserId: message.userId }).catch(() => {});
           });
         });
       }
