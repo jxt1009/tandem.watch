@@ -417,7 +417,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     // Apply URL changes to all Netflix pages (browse, title, watch, etc.)
     const incomingUrl = new URL(request.url);
-    const currentUrl = window.location.href;
+    const currentUrl = new URL(window.location.href);
 
     // Prevent bouncing back to previous episode during auto-advance
     if (window.location.pathname.startsWith('/watch')) {
@@ -426,7 +426,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (transitionRaw) {
           const transition = JSON.parse(transitionRaw);
           const withinWindow = Date.now() - transition.timestamp < 15000;
-          const isBounceBack = transition.from === request.url && transition.to === currentUrl;
+          const isBounceBack = transition.from === request.url && transition.to === window.location.href;
           if (withinWindow && isBounceBack) {
             console.log('[Content Script] Ignoring URL change back to previous episode during auto-advance');
             return;
@@ -437,9 +437,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     }
     
-    // Don't navigate if we're already on this URL
-    if (currentUrl === request.url) {
-      console.log('[Content Script] Already on this URL, skipping navigation');
+    // For /watch pages, merge the video ID and trackId into current URL params
+    let targetUrl = request.url;
+    const incomingPath = incomingUrl.pathname;
+    const currentPath = currentUrl.pathname;
+    const bothAreWatch = currentPath.startsWith('/watch') && incomingPath.startsWith('/watch');
+    
+    if (bothAreWatch) {
+      // Preserve current URL params, just update video ID and trackId
+      const mergedUrl = new URL(currentUrl.href);
+      mergedUrl.pathname = incomingUrl.pathname; // Update video ID in path
+      
+      // Update or add trackId if present in incoming URL
+      const incomingTrackId = incomingUrl.searchParams.get('trackId');
+      if (incomingTrackId) {
+        mergedUrl.searchParams.set('trackId', incomingTrackId);
+      }
+      
+      targetUrl = mergedUrl.href;
+      console.log('[Content Script] Merged URL preserving params:', targetUrl);
+    }
+    
+    // Don't navigate if we're already on this URL (compare normalized versions)
+    const normalizedCurrent = urlSync.normalizeUrl(window.location.href);
+    const normalizedTarget = urlSync.normalizeUrl(targetUrl);
+    if (normalizedCurrent === normalizedTarget) {
+      console.log('[Content Script] Already on this URL (normalized), skipping navigation');
       
       // But still sync to initiator's time if provided
       if (request.currentTime !== undefined && request.currentTime !== null) {
@@ -449,9 +472,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
     
-    console.log('[Content Script] Navigating to:', request.url);
+    console.log('[Content Script] Navigating to:', targetUrl);
     // Save state before navigating (for restoration if on /watch page)
-    const currentPath = window.location.pathname;
     if (currentPath.startsWith('/watch')) {
       urlSync.saveState();
     }
@@ -462,21 +484,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       console.log('[Content Script] Storing pending seek time:', request.currentTime);
     }
     
-    // Check if both current and target are /watch pages
-    const incomingPath = incomingUrl.pathname;
-    const bothAreWatch = currentPath.startsWith('/watch') && incomingPath.startsWith('/watch');
-    
     // For /watch to /watch navigation (episode changes), always force reload
     // Netflix player doesn't respond to pushState for episode changes
     if (bothAreWatch) {
       console.log('[Content Script] Watch-to-watch navigation detected, forcing full reload');
-      window.location.href = request.url;
+      window.location.href = targetUrl;
       return;
     }
     
     // For other navigation (browse to watch, etc), try SPA navigation
     try {
-      window.history.pushState({}, '', request.url);
+      window.history.pushState({}, '', targetUrl);
       window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
       console.log('[Content Script] SPA navigation triggered');
     } catch (e) {
