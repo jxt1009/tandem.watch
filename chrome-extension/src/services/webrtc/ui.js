@@ -118,47 +118,43 @@ export function createRemoteVideoManager(remoteVideos) {
     console.log('[RemoteVideoManager] Adding remote video for peer:', peerId, 'stream:', stream, 'tracks:', stream.getTracks());
     console.log('[RemoteVideoManager] Current remoteVideos map size:', remoteVideos.size, 'peers:', Array.from(remoteVideos.keys()));
     
-    // Check if video already exists in DOM (double-check for race conditions)
+    // First, aggressively clean up any existing elements for this peer to prevent duplicates
+    const existingInMap = remoteVideos.get(peerId);
     const existingInDom = document.getElementById('tandem-remote-' + peerId);
-    if (existingInDom) {
-      console.log('[RemoteVideoManager] Video already exists in DOM for peer:', peerId, 'skipping duplicate creation');
-      // Update stream on existing element if different
+    const existingContainer = document.getElementById('tandem-container-' + peerId);
+    
+    if (existingInDom && existingInMap && existingInDom === existingInMap) {
+      console.log('[RemoteVideoManager] Video already exists for peer:', peerId, 'updating stream if needed');
       if (existingInDom.srcObject !== stream) {
         console.log('[RemoteVideoManager] Updating stream on existing video element');
+        if (existingInDom.srcObject) {
+          existingInDom.srcObject.getTracks().forEach(t => t.stop());
+        }
         existingInDom.srcObject = stream;
-        // Remove loading overlay if it exists
         const overlay = document.getElementById('tandem-overlay-' + peerId);
         if (overlay) overlay.remove();
-      }
-      // Make sure it's tracked
-      if (!remoteVideos.has(peerId)) {
-        remoteVideos.set(peerId, existingInDom);
       }
       return;
     }
     
-    // Check if a placeholder container already exists
-    let container = document.getElementById('tandem-container-' + peerId);
-    
-    if (!container) {
-      // No placeholder exists, create container from scratch
-      // Remove any stale references
+    // Clean up any stale elements before creating new ones
+    if (existingInMap || existingInDom || existingContainer) {
+      console.log('[RemoteVideoManager] Found stale elements for peer:', peerId, 'cleaning up before creating new');
       remove(peerId);
-      
-      container = document.createElement('div');
-      container.id = 'tandem-container-' + peerId;
-      container.style.position = 'fixed';
-      container.style.bottom = '145px';
-      container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
-      container.style.width = '240px';
-      container.style.height = '160px';
-      container.style.zIndex = 999999;
-      container.style.border = '2px solid #00aaff';
-      container.style.borderRadius = '4px';
-      container.style.backgroundColor = '#000';
-    } else {
-      console.log('[RemoteVideoManager] Using existing placeholder container for peer:', peerId);
     }
+    
+    // Create fresh container
+    const container = document.createElement('div');
+    container.id = 'tandem-container-' + peerId;
+    container.style.position = 'fixed';
+    container.style.bottom = '145px';
+    container.style.right = (20 + (remoteVideos.size * 180)) + 'px';
+    container.style.width = '240px';
+    container.style.height = '160px';
+    container.style.zIndex = 999999;
+    container.style.border = '2px solid #00aaff';
+    container.style.borderRadius = '4px';
+    container.style.backgroundColor = '#000';
     
     const v = document.createElement('video');
     v.id = 'tandem-remote-' + peerId;

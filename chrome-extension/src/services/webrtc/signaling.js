@@ -17,37 +17,40 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
         const connectionState = pc.connectionState;
         console.log('[Signaling] Already have peer connection for', from, 'state:', connectionState);
         
-        // If connection is still good (connected/connecting), reuse it
-        if (connectionState === 'connected' || connectionState === 'connecting') {
-          console.log('[Signaling] Reusing existing connection - ensuring tracks are present');
-          const stream = getLocalStream();
-          if (stream) {
-            let needsRenegotiation = false;
-            stream.getTracks().forEach(t => {
-              const senders = pc.getSenders();
-              const existingSender = senders.find(s => s.track && s.track.kind === t.kind);
-              if (!existingSender || existingSender.track.id !== t.id) {
-                console.log('[Signaling] Track changed, replacing:', t.kind, t.id);
-                addOrReplaceTrack(pc, t, stream);
-                needsRenegotiation = true;
+        // Only reuse if connection is fully connected AND tracks are present
+        // Otherwise clean up and start fresh to avoid duplicate videos
+        if (connectionState === 'connected') {
+          const receivers = pc.getReceivers();
+          const hasActiveStreams = receivers.some(r => r.track && r.track.readyState === 'live');
+          
+          if (hasActiveStreams) {
+            console.log('[Signaling] Reusing existing connected peer with active streams');
+            const stream = getLocalStream();
+            if (stream) {
+              let needsRenegotiation = false;
+              stream.getTracks().forEach(t => {
+                const senders = pc.getSenders();
+                const existingSender = senders.find(s => s.track && s.track.kind === t.kind);
+                if (!existingSender || existingSender.track.id !== t.id) {
+                  console.log('[Signaling] Track changed, replacing:', t.kind, t.id);
+                  addOrReplaceTrack(pc, t, stream);
+                  needsRenegotiation = true;
+                }
+              });
+              
+              if (needsRenegotiation && pc.signalingState === 'stable') {
+                console.log('[Signaling] Renegotiating due to track changes');
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
               }
-            });
-            
-            // Only renegotiate if tracks changed
-            if (needsRenegotiation && pc.signalingState === 'stable') {
-              console.log('[Signaling] Renegotiating due to track changes');
-              const offer = await pc.createOffer();
-              await pc.setLocalDescription(offer);
-              sendSignal({ type: 'OFFER', from: state.userId, to: from, offer: pc.localDescription });
             }
+            return;
           }
-          return;
         }
         
-        // For any other state (disconnected/failed/closed), clean it up and create new connection
-        // This handles the case where a peer refreshes - their old connection is stuck in 
-        // disconnected/failed state, so we need to clean it up when they rejoin
-        console.log('[Signaling] Cleaning up existing connection in state:', connectionState);
+        // For any other state or if no active streams, clean it up completely
+        console.log('[Signaling] Cleaning up existing connection in state:', connectionState, '- starting fresh');
         clearReconnection(from);
         removeRemoteVideo(from);
         try { pc.close(); } catch (e) {}
