@@ -432,35 +432,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
     
-    console.log('[Content Script] Navigating to:', request.url, 'using SPA navigation');
+    console.log('[Content Script] Navigating to:', request.url);
     // Save state before navigating (for restoration if on /watch page)
     const currentPath = window.location.pathname;
     if (currentPath.startsWith('/watch')) {
       urlSync.saveState();
     }
     
-    // Use history.pushState to navigate without full page reload (Netflix SPA style)
+    // Check if both current and target are /watch pages
+    const incomingPath = incomingUrl.pathname;
+    const bothAreWatch = currentPath.startsWith('/watch') && incomingPath.startsWith('/watch');
+    
+    // For /watch to /watch navigation (episode changes), always force reload
+    // Netflix player doesn't respond to pushState for episode changes
+    if (bothAreWatch) {
+      console.log('[Content Script] Watch-to-watch navigation detected, forcing full reload');
+      window.location.href = request.url;
+      return;
+    }
+    
+    // For other navigation (browse to watch, etc), try SPA navigation
     try {
       window.history.pushState({}, '', request.url);
-      
-      // Trigger popstate event to let Netflix's router handle the navigation
       window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
-      
       console.log('[Content Script] SPA navigation triggered');
-
-      // Fallback: if Netflix doesn't navigate, force a full reload
-      setTimeout(() => {
-        try {
-          const expected = new URL(request.url).pathname + new URL(request.url).search;
-          const current = window.location.pathname + window.location.search;
-          if (current !== expected) {
-            console.warn('[Content Script] SPA navigation did not complete, forcing full reload');
-            window.location.href = request.url;
-          }
-        } catch (e) {
-          window.location.href = request.url;
-        }
-      }, 800);
     } catch (e) {
       console.error('[Content Script] Failed to navigate via pushState, falling back to full reload:', e);
       window.location.href = request.url;
