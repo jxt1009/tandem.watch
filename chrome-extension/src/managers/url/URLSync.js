@@ -5,6 +5,7 @@ export class URLSync {
     this.urlMonitorInterval = null;
     this.lastUrl = null;
     this.lastVideoEndedTime = 0;
+    this.videoEndListener = null;
     this.onWatchPageChange = onWatchPageChange || (() => {});
     this.onNavigateToWatch = onNavigateToWatch || (() => {});
     this.onLeaveWatch = onLeaveWatch || (() => {});
@@ -64,40 +65,30 @@ export class URLSync {
       
       const state = this.stateManager.getState();
       
-      // For watch-to-watch transitions, check if previous video just ended (auto-advance)
-      // vs user manually skipping (should broadcast)
-      let shouldBroadcastUrl = !watchPageChanged;
+      // For watch-to-watch transitions, check if this is auto-advance
+      // Auto-advance happens either:
+      // 1. Within 5 seconds of video ended event (credits skipped)
+      // 2. When URL changes and video is >90% through (near end)
+      const recentlyEnded = Date.now() - this.lastVideoEndedTime < 5000;
+      let isLikelyAutoAdvance = recentlyEnded;
       
-      if (watchPageChanged && this.netflixController) {
-        // Get player state to check if video just ended
+      // Also check if video is near the end when URL changes
+      if (!isLikelyAutoAdvance && watchPageChanged && this.netflixController) {
         this.netflixController.getPlayerState().then(playerState => {
-          const wasAutoAdvance = playerState && playerState.justEnded;
-          if (wasAutoAdvance) {
-            console.log('[URLSync] Video just ended - this is likely Netflix auto-advance, not broadcasting');
-            this.lastVideoEndedTime = Date.now();
-          } else {
-            console.log('[URLSync] Manual watch-to-watch transition detected, allowing broadcast');
-            // Send the URL change if party is active
-            if (state.partyActive) {
-              console.log('[URLSync] Broadcasting manual episode skip to party:', currentPath);
-              this.stateManager.safeSendMessage({ 
-                type: 'URL_CHANGE', 
-                url: currentUrl 
-              });
+          if (playerState && playerState.duration && playerState.currentTime) {
+            const percentComplete = playerState.currentTime / playerState.duration;
+            if (percentComplete > 0.9) {
+              console.log('[URLSync] URL changed at', (percentComplete * 100).toFixed(1) + '% of video - likely auto-advance');
+              this.lastVideoEndedTime = Date.now();
             }
           }
-        }).catch(err => {
-          console.warn('[URLSync] Failed to check player state:', err);
-          // On error, assume it's safe to broadcast manual changes
-          if (state.partyActive && Date.now() - this.lastVideoEndedTime > 5000) {
-            console.log('[URLSync] Broadcasting watch-to-watch transition (player state check failed):', currentPath);
-            this.stateManager.safeSendMessage({ 
-              type: 'URL_CHANGE', 
-              url: currentUrl 
-            });
-          }
-        });
-        shouldBroadcastUrl = false; // Don't broadcast here, we're checking async
+        }).catch(() => {});
+      }
+      
+      let shouldBroadcastUrl = !watchPageChanged || (watchPageChanged && !isLikelyAutoAdvance);
+      
+      if (watchPageChanged && isLikelyAutoAdvance) {
+        console.log('[URLSync] Auto-advance detected, not broadcasting');
       }
       
       if (state.partyActive && shouldBroadcastUrl) {
@@ -148,6 +139,26 @@ export class URLSync {
     this.urlMonitorInterval = setInterval(() => {
       this.handleUrlChange();
     }, 500);
+    
+    // Listen for video ended event to detect auto-advance
+    const setupVideoListener = () => {
+      const video = document.querySelector('video');
+      if (video) {
+        if (this.videoEndListener) {
+          video.removeEventListener('ended', this.videoEndListener);
+        }
+        this.videoEndListener = () => {
+          console.log('[URLSync] Video ended - recording timestamp for auto-advance detection');
+          this.lastVideoEndedTime = Date.now();
+        };
+        video.addEventListener('ended', this.videoEndListener);
+        console.log('[URLSync] Attached ended listener to video element');
+      } else {
+        // Try again in a moment
+        setTimeout(setupVideoListener, 1000);
+      }
+    };
+    setupVideoListener();
   }
   
   stop() {
@@ -156,6 +167,12 @@ export class URLSync {
     if (this.urlMonitorInterval) { 
       clearInterval(this.urlMonitorInterval); 
       this.urlMonitorInterval = null; 
+    }
+    
+    if (this.videoEndListener) {
+      const videos = document.querySelectorAll('video');
+      videos.forEach(video => video.removeEventListener('ended', this.videoEndListener));
+      this.videoEndListener = null;
     }
     
     window.removeEventListener('popstate', this.handleUrlChange);
