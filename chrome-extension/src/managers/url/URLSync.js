@@ -4,6 +4,7 @@ export class URLSync {
     this.netflixController = netflixController;
     this.urlMonitorInterval = null;
     this.lastUrl = null;
+    this.lastNormalizedUrl = null;
     this.lastVideoEndedTime = 0;
     this.videoEndListener = null;
     this.recentAutoAdvanceUrl = null; // Track recent auto-advance to suppress conflicting sync
@@ -19,11 +20,13 @@ export class URLSync {
   
   handleUrlChange() {
     const currentUrl = window.location.href;
-    if (currentUrl !== this.lastUrl) {
+    const normalizedCurrentUrl = this.normalizeUrl(currentUrl);
+    const normalizedPreviousUrl = this.lastNormalizedUrl;
+    if (normalizedCurrentUrl !== normalizedPreviousUrl) {
       const previousUrl = this.lastUrl;
       console.log('[URLSync] URL changed from', previousUrl, 'to', currentUrl);
-      const lastPath = previousUrl ? new URL(previousUrl).pathname : '';
-      const currentPath = new URL(currentUrl).pathname;
+      const lastPath = normalizedPreviousUrl ? new URL(normalizedPreviousUrl).pathname : '';
+      const currentPath = new URL(normalizedCurrentUrl).pathname;
       
       // Check if we navigated to a different /watch page or left /watch
       const wasOnWatch = lastPath.startsWith('/watch');
@@ -35,6 +38,7 @@ export class URLSync {
       const leftWatch = wasOnWatch && !nowOnWatch;
       
       this.lastUrl = currentUrl;
+      this.lastNormalizedUrl = normalizedCurrentUrl;
       
       // If we navigated from browse to watch, set flag to respect Netflix auto-play
       if (navigatedFromBrowseToWatch) {
@@ -47,8 +51,8 @@ export class URLSync {
         console.log('[URLSync] Watch page changed - triggering sync reinitialization');
         try {
           sessionStorage.setItem('tandem_watch_transition', JSON.stringify({
-            from: previousUrl,
-            to: currentUrl,
+            from: normalizedPreviousUrl || previousUrl,
+            to: normalizedCurrentUrl || currentUrl,
             timestamp: Date.now()
           }));
         } catch (e) {
@@ -76,7 +80,7 @@ export class URLSync {
       // 1. Within 5 seconds of video ended event (credits skipped)
       // 2. When URL changes and video is >90% through (near end)
       const recentlyEnded = Date.now() - this.lastVideoEndedTime < 5000;
-      const recentlyPrompted = this.pendingAutoAdvanceUrl === previousUrl && (Date.now() - this.pendingAutoAdvanceTime < 60000);
+      const recentlyPrompted = this.pendingAutoAdvanceUrl === normalizedPreviousUrl && (Date.now() - this.pendingAutoAdvanceTime < 60000);
       let isLikelyAutoAdvance = recentlyEnded || recentlyPrompted;
       
       // Also check if video is near the end when URL changes
@@ -87,7 +91,7 @@ export class URLSync {
             if (percentComplete > 0.9) {
               console.log('[URLSync] URL changed at', (percentComplete * 100).toFixed(1) + '% of video - likely auto-advance');
               this.lastVideoEndedTime = Date.now();
-              this.recentAutoAdvanceUrl = previousUrl;
+              this.recentAutoAdvanceUrl = normalizedPreviousUrl || previousUrl;
               this.recentAutoAdvanceTime = Date.now();
             }
           }
@@ -95,7 +99,7 @@ export class URLSync {
       }
       
       if (isLikelyAutoAdvance) {
-        this.recentAutoAdvanceUrl = previousUrl;
+        this.recentAutoAdvanceUrl = normalizedPreviousUrl || previousUrl;
         this.recentAutoAdvanceTime = Date.now();
       }
       
@@ -109,7 +113,7 @@ export class URLSync {
         console.log('[URLSync] Broadcasting URL change to party:', currentPath);
         this.stateManager.safeSendMessage({ 
           type: 'URL_CHANGE', 
-          url: currentUrl 
+          url: normalizedCurrentUrl || currentUrl 
         });
       }
       
@@ -127,6 +131,7 @@ export class URLSync {
   
   start() { 
     this.lastUrl = window.location.href;
+    this.lastNormalizedUrl = this.normalizeUrl(this.lastUrl);
     console.log('[URLSync] Starting URL monitoring, current URL:', this.lastUrl);
     
     // Clear any existing interval and listeners
@@ -179,7 +184,7 @@ export class URLSync {
       if (!button) return;
       const now = Date.now();
       if (now - this.pendingAutoAdvanceTime < 2000) return;
-      this.pendingAutoAdvanceUrl = this.lastUrl;
+      this.pendingAutoAdvanceUrl = this.lastNormalizedUrl || this.lastUrl;
       this.pendingAutoAdvanceTime = now;
       console.log('[URLSync] Next episode prompt detected - marking pending auto-advance');
     };
@@ -217,6 +222,23 @@ export class URLSync {
     window.removeEventListener('popstate', this.handleUrlChange);
     
     this.lastUrl = null;
+    this.lastNormalizedUrl = null;
+  }
+
+  normalizeUrl(url) {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      const path = parsed.pathname;
+      if (!path.startsWith('/watch')) {
+        return parsed.origin + path;
+      }
+      const trackId = parsed.searchParams.get('trackId');
+      const normalized = trackId ? `${path}?trackId=${encodeURIComponent(trackId)}` : path;
+      return parsed.origin + normalized;
+    } catch (e) {
+      return url;
+    }
   }
   saveState() {
     const state = this.stateManager.getState();
