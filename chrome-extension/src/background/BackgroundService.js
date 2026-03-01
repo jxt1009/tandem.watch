@@ -81,7 +81,7 @@ export class BackgroundService {
         this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, username: this.username || null, pin: this.pin || null, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId, username: this.username || this.userId }).catch(() => {});
             chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_INITIAL_SYNC_AND_PLAY' }).catch(() => {});
             // Start with "waiting" status - will update when others join
             chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'waiting' }).catch(() => {});
@@ -181,7 +181,12 @@ export class BackgroundService {
       if (message.type === 'ROOM_STATE') {
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'ROOM_STATE', hostUserId: message.hostUserId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, {
+              type: 'ROOM_STATE',
+              hostUserId: message.hostUserId,
+              guestControlEnabled: message.guestControlEnabled || false,
+              users: message.users || [],
+            }).catch(() => {});
           });
         });
       }
@@ -189,6 +194,20 @@ export class BackgroundService {
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
             chrome.tabs.sendMessage(tab.id, { type: 'HOST_CHANGED', hostUserId: message.hostUserId }).catch(() => {});
+          });
+        });
+      }
+      if (message.type === 'GUEST_CONTROL') {
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'GUEST_CONTROL', enabled: message.enabled }).catch(() => {});
+          });
+        });
+      }
+      if (message.type === 'USERNAME_UPDATED') {
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'USERNAME_UPDATED', userId: message.userId, username: message.username }).catch(() => {});
           });
         });
       }

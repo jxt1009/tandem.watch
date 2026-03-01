@@ -367,6 +367,7 @@ wss.on('connection', (ws, req) => {
         await EventRepository.log(roomId, 'USER_JOINED', userId, { peerId, username });
 
         // Send room state to joining user
+        const roomUsers = await UserRepository.getRoomUsers(roomId);
         ws.send(JSON.stringify({
           type: 'ROOM_STATE',
           roomId,
@@ -374,6 +375,8 @@ wss.on('connection', (ws, req) => {
           currentTime: room.currentTime,
           isPlaying: room.isPlaying,
           hostUserId: room.hostUserId,
+          guestControlEnabled: room.guestControlEnabled || false,
+          users: roomUsers.map(u => ({ userId: u.id, username: u.username })),
           nodeId: config.nodeId,
         }));
 
@@ -399,6 +402,28 @@ wss.on('connection', (ws, req) => {
           type: 'USERNAME_UPDATED',
           userId,
           username,
+          timestamp: Date.now(),
+        });
+      }
+
+      // ===== GUEST CONTROL TOGGLE =====
+      else if (type === 'TOGGLE_GUEST_CONTROL') {
+        if (!roomId || !userId) return;
+        const enabled = data.enabled === true;
+
+        // Only the host may toggle guest control
+        const room = await RoomRepository.getById(roomId);
+        if (!room || room.hostUserId !== userId) {
+          logger.warn({ userId, roomId }, 'Non-host tried to toggle guest control');
+          return;
+        }
+
+        await RoomRepository.update(roomId, { guestControlEnabled: enabled });
+        await EventRepository.log(roomId, 'GUEST_CONTROL', userId, { enabled });
+
+        broadcastToRoom(roomId, {
+          type: 'GUEST_CONTROL',
+          enabled,
           timestamp: Date.now(),
         });
       }

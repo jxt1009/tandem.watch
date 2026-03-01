@@ -1,4 +1,4 @@
-export function createRemoteVideoManager(remoteVideos) {
+export function createRemoteVideoManager(remoteVideos, sidebarPanel = null) {
   function ensureSpinnerStyles() {
     if (document.getElementById('tandem-spinner-styles')) {
       return;
@@ -112,7 +112,17 @@ export function createRemoteVideoManager(remoteVideos) {
   }
 
   function add(peerId, stream) {
-    console.log('[RemoteVideoManager] Adding remote video for peer:', peerId, 'stream:', stream, 'tracks:', stream.getTracks());
+    console.log('[RemoteVideoManager] Adding remote video for peer:', peerId);
+
+    // ── Sidebar path ──────────────────────────────────────────────────────
+    if (sidebarPanel) {
+      sidebarPanel.setParticipantStream(peerId, stream);
+      remoteVideos.set(peerId, null); // Track that this peer has a stream
+      return;
+    }
+
+    // ── Floating fallback path (no sidebar) ───────────────────────────────
+    console.log('[RemoteVideoManager] stream:', stream, 'tracks:', stream.getTracks());
     console.log('[RemoteVideoManager] Current remoteVideos map size:', remoteVideos.size, 'peers:', Array.from(remoteVideos.keys()));
     
     // First, aggressively clean up any existing elements for this peer to prevent duplicates
@@ -286,8 +296,13 @@ export function createRemoteVideoManager(remoteVideos) {
   
   function remove(peerId) {
     console.log('[RemoteVideoManager] Removing remote video for peer:', peerId);
-    
-    // Remove from map
+
+    if (sidebarPanel) {
+      remoteVideos.delete(peerId);
+      return;
+    }
+
+    // Floating fallback cleanup
     const v = remoteVideos.get(peerId);
     if (v) {
       try { 
@@ -339,6 +354,10 @@ export function createRemoteVideoManager(remoteVideos) {
   
   function showReconnecting(peerId) {
     console.log('[RemoteVideoManager] Showing reconnecting overlay for peer:', peerId);
+    if (sidebarPanel) {
+      sidebarPanel.setConnectionStatus(peerId, 'reconnecting');
+      return;
+    }
     
     // Check if overlay already exists
     let overlay = document.getElementById('tandem-overlay-' + peerId);
@@ -391,6 +410,10 @@ export function createRemoteVideoManager(remoteVideos) {
   }
   
   function hideOverlay(peerId) {
+    if (sidebarPanel) {
+      sidebarPanel.setConnectionStatus(peerId, 'connected');
+      return;
+    }
     const overlay = document.getElementById('tandem-overlay-' + peerId);
     if (overlay) {
       console.log('[RemoteVideoManager] Hiding overlay for peer:', peerId);
@@ -443,6 +466,10 @@ export function createRemoteVideoManager(remoteVideos) {
   
   function showPlaceholder(peerId) {
     console.log('[RemoteVideoManager] Showing placeholder for peer:', peerId);
+    if (sidebarPanel) {
+      sidebarPanel.setConnectionStatus(peerId, 'connecting');
+      return;
+    }
     
     // Hide waiting indicator when first peer connects
     hideWaitingIndicator();
@@ -504,5 +531,9 @@ export function createRemoteVideoManager(remoteVideos) {
     console.log('[RemoteVideoManager] Created placeholder container:', container.id);
   }
   
-  return { add, remove, showReconnecting, hideOverlay, showPlaceholder, showWaitingIndicator, hideWaitingIndicator };
+  function setSidebarPanel(panel) {
+    sidebarPanel = panel;
+  }
+
+  return { add, remove, showReconnecting, hideOverlay, showPlaceholder, showWaitingIndicator, hideWaitingIndicator, setSidebarPanel };
 }

@@ -4,6 +4,7 @@ import { SyncManager } from '../managers/sync/SyncManager.js';
 import { WebRTCManager } from '../services/webrtc/WebRTCManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { URLSync } from '../managers/url/URLSync.js';
+import { SidebarPanel } from '../ui/SidebarPanel.js';
 
 console.log('[Content Script] Initializing managers...');
 
@@ -82,7 +83,7 @@ const handleLeaveWatch = () => {
   syncManager.teardown();
 };
 
-const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch, netflixController, () => syncManager.isLocalHost());
+const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch, netflixController, () => syncManager.canBroadcast());
 syncManager.setUrlSync(urlSync);
 console.log('[Content Script] Managers initialized');
 
@@ -123,6 +124,7 @@ function checkJoinFromLink() {
 
 let localStream = null;
 let videoElementMonitor = null;
+let sidebarPanel = null;
 
 // Try to get a media stream, gracefully falling back if camera or mic is absent.
 // Returns a MediaStream (possibly with fewer tracks than requested) or null if no
@@ -171,6 +173,9 @@ function startVideoElementMonitoring() {
     const state = stateManager.getState();
     if (!state.partyActive) return;
     
+    // When sidebar is active, it manages all video elements — no need to check DOM IDs
+    if (sidebarPanel) return;
+    
     // Check if local preview exists
     if (localStream && !document.getElementById('tandem-local-preview')) {
       console.log('[Content Script] Local preview missing, re-attaching');
@@ -178,7 +183,6 @@ function startVideoElementMonitoring() {
     }
     
     // Check if remote videos exist
-    const remoteVideos = uiManager.getRemoteVideos();
     const remoteStreams = uiManager.getRemoteStreams();
     remoteStreams.forEach((stream, peerId) => {
       const videoId = 'tandem-remote-' + peerId;
@@ -219,6 +223,23 @@ checkJoinFromLink();
           console.log('[Content Script] Party restoration successful - setting state with userId:', response.userId);
           // Immediately set the userId and roomId so we can handle incoming messages
           stateManager.startParty(response.userId, response.roomId);
+
+          // Re-mount sidebar for this session
+          if (!sidebarPanel) {
+            sidebarPanel = new SidebarPanel({
+              onLeave: () => { chrome.runtime.sendMessage({ type: 'STOP_PARTY' }); },
+              onToggleGuestControl: (enabled) => {
+                stateManager.safeSendMessage({ type: 'TOGGLE_GUEST_CONTROL', enabled });
+                syncManager.setGuestControlEnabled(enabled);
+              },
+              onTransferHost: (targetUserId) => {
+                stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
+              },
+            });
+            sidebarPanel.mount();
+            sidebarPanel.setLocalUserId(response.userId, response.username || response.userId);
+            webrtcManager.setSidebarPanel(sidebarPanel);
+          }
           
           // Re-obtain media stream for WebRTC signaling
           console.log('[Content Script] Re-obtaining media stream after navigation');
@@ -229,7 +250,12 @@ checkJoinFromLink();
                 console.log('[Content Script] Media stream obtained after restoration');
                 webrtcManager.setLocalStream(stream);
                 webrtcManager.onLocalStreamAvailable(stream);
-                uiManager.attachLocalPreview(stream);
+                if (sidebarPanel) {
+                  const myId = stateManager.getUserId();
+                  if (myId) sidebarPanel.setLocalStream(myId, stream);
+                } else {
+                  uiManager.attachLocalPreview(stream);
+                }
               } else {
                 console.warn('[Content Script] No media devices after restoration — rejoining without camera/mic');
               }
@@ -328,7 +354,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           console.log('[Content Script] Media stream obtained, tracks:', stream.getTracks().length);
           webrtcManager.setLocalStream(stream);
           webrtcManager.onLocalStreamAvailable(stream);
-          uiManager.attachLocalPreview(stream);
+          // Show local camera in sidebar tile; fallback to floating preview if no sidebar
+          if (sidebarPanel) {
+            const myId = stateManager.getUserId();
+            if (myId) sidebarPanel.setLocalStream(myId, stream);
+          } else {
+            uiManager.attachLocalPreview(stream);
+          }
         } else {
           console.warn('[Content Script] No media devices — joining without camera/mic');
         }
@@ -344,9 +376,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'PARTY_STARTED') {
     console.log('[Content Script] Party started:', request.userId, request.roomId);
     stateManager.startParty(request.userId, request.roomId);
-    
-    // Show simple connection indicator
-    uiManager.showConnectionIndicator();
+
+    // Create and mount sidebar
+    if (sidebarPanel) sidebarPanel.destroy();
+    sidebarPanel = new SidebarPanel({
+      onLeave: () => {
+        chrome.runtime.sendMessage({ type: 'STOP_PARTY' });
+      },
+      onToggleGuestControl: (enabled) => {
+        stateManager.safeSendMessage({ type: 'TOGGLE_GUEST_CONTROL', enabled });
+        syncManager.setGuestControlEnabled(enabled);
+      },
+      onTransferHost: (targetUserId) => {
+        stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
+      },
+    });
+    sidebarPanel.mount();
+    sidebarPanel.setLocalUserId(request.userId, request.username || request.userId);
+
+    // Wire sidebar into WebRTC so video streams route to tiles
+    webrtcManager.setSidebarPanel(sidebarPanel);
     
     // Set Netflix volume to 15%
     setTimeout(() => {
@@ -372,8 +421,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'ROOM_STATE') {
     if (request.hostUserId) {
-      console.log('[Content Script] Room state received - hostUserId:', request.hostUserId);
+      console.log('[Content Script] Room state received - hostUserId:', request.hostUserId, 'guestControl:', request.guestControlEnabled);
       syncManager.setHostUserId(request.hostUserId);
+      syncManager.setGuestControlEnabled(request.guestControlEnabled || false);
+    }
+    if (sidebarPanel) {
+      if (request.hostUserId) sidebarPanel.setHost(request.hostUserId);
+      sidebarPanel.setGuestControlEnabled(request.guestControlEnabled || false);
+      // Add any existing participants we don't know about yet
+      const myId = stateManager.getUserId();
+      (request.users || []).forEach(u => {
+        if (u.userId && u.userId !== myId) {
+          const isHost = u.userId === request.hostUserId;
+          sidebarPanel.addParticipant(u.userId, u.username || u.userId, isHost, false);
+        }
+      });
     }
   }
 
@@ -381,6 +443,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.hostUserId) {
       console.log('[Content Script] Host changed - new hostUserId:', request.hostUserId);
       syncManager.setHostUserId(request.hostUserId);
+      if (sidebarPanel) sidebarPanel.setHost(request.hostUserId);
+    }
+  }
+
+  if (request.type === 'GUEST_CONTROL') {
+    console.log('[Content Script] Guest control changed:', request.enabled);
+    syncManager.setGuestControlEnabled(request.enabled);
+    if (sidebarPanel) sidebarPanel.setGuestControlEnabled(request.enabled);
+  }
+
+  if (request.type === 'USERNAME_UPDATED') {
+    if (sidebarPanel && request.userId && request.username) {
+      sidebarPanel.updateUsername(request.userId, request.username);
     }
   }
 
@@ -394,6 +469,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     webrtcManager.clearAll();
     uiManager.removeLocalPreview();
     uiManager.removeConnectionIndicator();
+    if (sidebarPanel) {
+      sidebarPanel.destroy();
+      sidebarPanel = null;
+    }
     if (localStream) {
       localStream.getTracks().forEach(t => t.stop());
       localStream = null;
@@ -402,8 +481,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.type === 'SIGNAL') {
-    console.log('[Content Script] Handling SIGNAL:', request.message?.type);
-    webrtcManager.handleSignal(request.message);
+    const msg = request.message;
+    console.log('[Content Script] Handling SIGNAL:', msg?.type);
+
+    // Update sidebar for participant join/leave
+    if (sidebarPanel && msg) {
+      const myId = stateManager.getUserId();
+      if (msg.type === 'USER_JOINED' && msg.userId && msg.userId !== myId) {
+        sidebarPanel.addParticipant(msg.userId, msg.username || msg.userId, false, false);
+      } else if ((msg.type === 'USER_LEFT' || msg.type === 'LEAVE') && msg.userId && msg.userId !== myId) {
+        sidebarPanel.removeParticipant(msg.userId);
+      }
+    }
+
+    webrtcManager.handleSignal(msg);
   }
 
   if (request.type === 'APPLY_PLAYBACK_CONTROL') {
@@ -573,6 +664,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'CONNECTION_STATUS') {
     console.log('[Content Script] Connection status changed:', request.status);
     uiManager.updateConnectionIndicator(request.status);
+    // Sidebar doesn't have a dedicated connection status bar, but the participant tiles
+    // already show individual connection state via setConnectionStatus.
   }
 
   if (request.type === 'RECONNECTED') {

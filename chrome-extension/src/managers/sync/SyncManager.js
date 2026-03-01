@@ -22,6 +22,7 @@ export class SyncManager {
     this.activeVideo = null;
     this.urlSync = null;
     this.hostUserId = null;
+    this.guestControlEnabled = false;
     this.heartbeatInterval = null;
 
     this.remote = createRemoteHandlers({
@@ -124,7 +125,7 @@ export class SyncManager {
       if (fromBrowse === 'true') {
         sessionStorage.removeItem('tandem_from_browse');
       }
-      if (fromBrowse === 'true' && this.isLocalHost()) {
+      if (fromBrowse === 'true' && this.canBroadcast()) {
         // Mark as initialized immediately so we start broadcasting our state
         this.isInitializedRef.set(true);
         this.initialSyncRequestAt = 0;
@@ -349,13 +350,22 @@ export class SyncManager {
     return !!(this.hostUserId && this.hostUserId === this.state.getUserId());
   }
 
+  /** Returns true when this user is allowed to broadcast playback controls. */
+  canBroadcast() {
+    return this.isLocalHost() || this.guestControlEnabled;
+  }
+
+  setGuestControlEnabled(enabled) {
+    this.guestControlEnabled = enabled;
+  }
+
   async broadcastPlay(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring PLAY event - not on /watch page');
       return;
     }
-    if (!this.isLocalHost()) {
-      console.log('[SyncManager] Ignoring PLAY event - not host');
+    if (!this.canBroadcast()) {
+      console.log('[SyncManager] Ignoring PLAY event - not host and guest control disabled');
       return;
     }
     try {
@@ -384,8 +394,8 @@ export class SyncManager {
       console.log('[SyncManager] Ignoring PAUSE event - not on /watch page');
       return;
     }
-    if (!this.isLocalHost()) {
-      console.log('[SyncManager] Ignoring PAUSE event - not host');
+    if (!this.canBroadcast()) {
+      console.log('[SyncManager] Ignoring PAUSE event - not host and guest control disabled');
       return;
     }
     try {
@@ -414,8 +424,8 @@ export class SyncManager {
       console.log('[SyncManager] Ignoring SEEK event - not on /watch page');
       return;
     }
-    if (!this.isLocalHost()) {
-      console.log('[SyncManager] Ignoring SEEK event - not host');
+    if (!this.canBroadcast()) {
+      console.log('[SyncManager] Ignoring SEEK event - not host and guest control disabled');
       return;
     }
     console.log('[SyncManager] Broadcasting SEEK event at', video.currentTime);

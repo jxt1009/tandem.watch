@@ -72,9 +72,9 @@ async function saveUsername() {
 }
 
 // Cache DOM elements
-let statusEl, statusText, statusControls, controlsSection, joinSection, partyInfo, statsSection, videoSection;
+let statusEl, statusText, statusControls, controlsSection, joinSection, partyInfo;
 let startBtn, stopBtn, shareLinkEl, roomCodeDisplay, roomCodeInput, joinRoomBtn;
-let userDisplay, localTimeEl, syncStatusEl, remoteUsersList, localVideo, remoteVideo;
+let userDisplay;
 let copyLinkBtn, copyCodeBtn, copyPinBtn, saveUsernameBtn, serverUrlEl;
 let usernameLabel, usernameContainer, editUsernameBtn;
 let toggleMicBtn, toggleVideoBtn;
@@ -88,8 +88,6 @@ function initializeDOMElements() {
   controlsSection = document.getElementById('controls-section');
   joinSection = document.getElementById('join-section');
   partyInfo = document.getElementById('party-info');
-  statsSection = document.getElementById('stats-section');
-  videoSection = document.getElementById('video-section');
   startBtn = document.getElementById('start-btn');
   stopBtn = document.getElementById('stop-btn');
   shareLinkEl = document.getElementById('share-link');
@@ -97,11 +95,6 @@ function initializeDOMElements() {
   roomCodeInput = document.getElementById('room-code-input');
   joinRoomBtn = document.getElementById('join-room-btn');
   userDisplay = document.getElementById('user-display');
-  localTimeEl = document.getElementById('local-time');
-  syncStatusEl = document.getElementById('sync-status');
-  remoteUsersList = document.getElementById('remote-users-list');
-  localVideo = document.getElementById('local-video');
-  remoteVideo = document.getElementById('remote-video');
   copyLinkBtn = document.getElementById('copy-link-btn');
   copyCodeBtn = document.getElementById('copy-code-btn');
   copyPinBtn = document.getElementById('copy-pin-btn');
@@ -487,7 +480,7 @@ function updateStatus() {
 }
 
 function updateUI() {
-  if (!statusEl || !statusText || !statusControls || !joinSection || !startBtn || !stopBtn || !partyInfo || !statsSection || !videoSection || !userDisplay) {
+  if (!statusEl || !statusText || !statusControls || !joinSection || !startBtn || !stopBtn || !partyInfo || !userDisplay) {
     console.warn('[Popup] UI elements not ready, skipping update');
     return;
   }
@@ -508,8 +501,7 @@ function updateUI() {
     startBtn.classList.add('hidden');
     stopBtn.classList.remove('hidden');
     partyInfo.classList.remove('hidden');
-    statsSection.classList.remove('hidden');
-    
+
     // Display username if set, otherwise show userId
     const displayName = persistedUsername || userId;
     // Only update if not currently being edited
@@ -517,7 +509,6 @@ function updateUI() {
       userDisplay.textContent = displayName;
     }
     updateShareLink();
-    updateStats();
     refreshMediaState();
   } else {
     if (statusEl) {
@@ -535,10 +526,6 @@ function updateUI() {
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
     partyInfo.classList.add('hidden');
-    statsSection.classList.add('hidden');
-    videoSection.classList.add('hidden');
-    localVideo.srcObject = null;
-    remoteVideo.srcObject = null;
   }
 }
 
@@ -590,129 +577,8 @@ const formatTime = (seconds) => {
 function startStatusPolling() {
   updateStatus();
   setInterval(updateStatus, 2000);
-  // Update stats more frequently when connected
-  setInterval(() => {
-    if (status.isConnected) {
-      updateStats();
-    }
-  }, 1000);
-}
-
-async function updateStats() {
-  if (!status.isConnected || !status.roomId) {
-    console.log('[Popup] Not connected or no room ID', { isConnected: status.isConnected, roomId: status.roomId });
-    return;
-  }
-
-  try {
-    // Import config to get the server URL
-    const config = CONFIG;
-    
-    // Fetch stats from signaling server (construct HTTP URL from WebSocket URL)
-    const httpUrl = config.WS.URL.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://').replace(/\/ws$/, '');
-    const statusUrl = httpUrl + '/status';
-    
-    console.log('[Popup] Fetching stats from server:', statusUrl, 'at', new Date().toISOString());
-    const response = await fetch(statusUrl);
-    if (!response.ok) {
-      console.error('[Popup] Failed to fetch server status:', response.status, response.statusText);
-      return;
-    }
-
-    const serverStatus = await response.json();
-    console.log('[Popup] Server status received at', new Date().toISOString(), ':', serverStatus);
-    console.log('[Popup] Looking for room:', status.roomId);
-
-    // Find our room
-    const room = serverStatus.rooms?.find(r => r.roomId === status.roomId);
-    if (!room) {
-      console.log('[Popup] Room not found on server. Available rooms:', serverStatus.rooms?.map(r => r.roomId));
-      if (syncStatusEl) {
-        syncStatusEl.textContent = 'Not Found';
-        syncStatusEl.style.color = '#ef4444';
-      }
-      return;
-    }
-    
-    console.log('[Popup] Room found:', room);
-    console.log('[Popup] Room currentTime:', room.currentTime, 'isPlaying:', room.isPlaying);
-    console.log('[Popup] Room users:', room.users);
-
-    // Update local time (use room's currentTime as reference)
-    if (localTimeEl) {
-      const formattedTime = formatTime(room.currentTime);
-      console.log('[Popup] Updating local time from', localTimeEl.textContent, 'to', formattedTime);
-      localTimeEl.textContent = formattedTime;
-    } else {
-      console.log('[Popup] localTimeEl not found!');
-    }
-
-    // Update sync status
-    if (syncStatusEl) {
-      const isPlaying = room.isPlaying ? 'Playing' : 'Paused';
-      console.log('[Popup] Setting sync status to:', isPlaying);
-      syncStatusEl.textContent = isPlaying;
-      syncStatusEl.style.color = room.isPlaying ? '#4ade80' : '#fbbf24';
-    } else {
-      console.log('[Popup] syncStatusEl not found!');
-    }
-
-    // Update user list with individual positions
-    if (remoteUsersList) {
-      const users = room.users || [];
-      
-      if (users.length === 0) {
-        remoteUsersList.innerHTML = '<div style="color: rgba(255,255,255,0.5); font-size: 12px; font-style: italic;">No users in party</div>';
-      } else {
-        const userListHTML = users.map((user, index) => {
-          const timeDiff = Math.abs(user.currentTime - room.currentTime);
-          const isOutOfSync = timeDiff > 2; // More than 2 seconds off
-          const statusColor = user.isPlaying ? '#4ade80' : '#fbbf24';
-          const syncColor = isOutOfSync ? '#ef4444' : '#4ade80';
-          const isCurrentUser = user.userId === status.userId;
-          const bgColor = isCurrentUser ? 'rgba(167, 139, 250, 0.1)' : 'transparent';
-          const borderColor = isCurrentUser ? '1px solid rgba(167, 139, 250, 0.3)' : '1px solid rgba(255,255,255,0.1)';
-          const displayName = isCurrentUser
-            ? (persistedUsername || user.username || 'You')
-            : (user.username || `${user.userId.substring(0, 8)}...`);
-          
-          return `
-            <div style="padding: 8px; border-top: ${borderColor}; background-color: ${bgColor}; ${index === 0 ? 'border-top: none;' : ''}">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <div style="font-weight: 600; font-size: 12px; color: rgba(82, 82, 82, 0.9);">
-                  ${displayName}${isCurrentUser ? ' (You)' : ''}
-                </div>
-                <div style="font-size: 10px; color: ${statusColor};">
-                  ${user.isPlaying ? '▶' : '⏸'}
-                </div>
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="font-size: 13px; font-weight: 600; color: #a78bfa;">
-                  ${formatTime(user.currentTime)}
-                </div>
-                <div style="font-size: 10px; color: ${syncColor}; font-weight: 600;">
-                  ${isOutOfSync ? `±${timeDiff.toFixed(1)}s` : '✓ synced'}
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('');
-        
-        remoteUsersList.innerHTML = `
-          <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px; color: rgba(255,255,255,0.7);">
-            ${users.length} user${users.length === 1 ? '' : 's'} in party
-          </div>
-          ${userListHTML}
-        `;
-      }
-    }
-  } catch (error) {
-    console.error('[Popup] Error fetching stats:', error);
-  }
 }
 
 chrome.runtime.onMessage.addListener((request) => {
-  if (request.type === 'REMOTE_STREAM_RECEIVED') {
-    remoteVideo.srcObject = request.stream;
-  }
+  // Reserved for future messages from background
 });

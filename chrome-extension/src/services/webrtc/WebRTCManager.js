@@ -4,16 +4,17 @@ import { createReconnectionManager } from './reconnect.js';
 import { createRemoteVideoManager } from './ui.js';
 
 export class WebRTCManager {
-  constructor(stateManager, uiManager) {
+  constructor(stateManager, uiManager, sidebarPanel = null) {
     this.stateManager = stateManager;
     this.uiManager = uiManager;
+    this.sidebarPanel = sidebarPanel;
     this.peerConnections = new Map();
     this.remoteStreams = this.uiManager.getRemoteStreams();
     this.remoteVideos = this.uiManager.getRemoteVideos();
     this.peersThatLeft = new Set();
     this.localStream = null;
 
-    const videoManager = createRemoteVideoManager(this.remoteVideos);
+    const videoManager = createRemoteVideoManager(this.remoteVideos, sidebarPanel);
     
     // Create a placeholder object for circular dependency resolution
     const reconnectionManager = {};
@@ -69,6 +70,7 @@ export class WebRTCManager {
 
   setLocalStream(stream) { this.localStream = stream; }
   getLocalStream() { return this.localStream; }
+  setSidebarPanel(panel) { this.sidebarPanel = panel; this.videoManager.setSidebarPanel(panel); }
   
   onLocalStreamAvailable(stream) {
     this.localStream = stream;
@@ -161,6 +163,7 @@ export class WebRTCManager {
     
     // Clean up video elements and their containers
     this.remoteVideos.forEach((v, peerId) => {
+      if (!v) return; // null means sidebar handled it
       try { 
         if (v.srcObject) {
           v.srcObject.getTracks().forEach(track => track.stop());

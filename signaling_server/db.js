@@ -65,10 +65,13 @@ export async function initializeDatabase() {
         current_url TEXT,
         "current_time" FLOAT,
         is_playing BOOLEAN,
+        guest_control_enabled BOOLEAN DEFAULT FALSE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         archived_at TIMESTAMP
       );
+
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS guest_control_enabled BOOLEAN DEFAULT FALSE;
 
       CREATE TABLE IF NOT EXISTS users (
         id VARCHAR(100) PRIMARY KEY,
@@ -113,10 +116,10 @@ export const RoomRepository = {
     try {
       // Save to PostgreSQL
       await pgPool.query(
-        `INSERT INTO rooms (id, host_user_id, is_playing, "current_time")
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO rooms (id, host_user_id, is_playing, "current_time", guest_control_enabled)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (id) DO UPDATE SET host_user_id = $2`,
-        [roomId, hostUserId, false, 0]
+        [roomId, hostUserId, false, 0, false]
       );
 
       // Store in Redis for quick access
@@ -126,13 +129,14 @@ export const RoomRepository = {
         current_url: '',
         current_time: '0',
         is_playing: 'false',
+        guest_control_enabled: 'false',
         updated_at: new Date().toISOString(),
       });
 
       await redis.client.sAdd(config.keys.activeRooms, roomId);
 
       logger.debug({ roomId, hostUserId }, 'Room created');
-      return { id: roomId, hostUserId, currentUrl: '', currentTime: 0, isPlaying: false };
+      return { id: roomId, hostUserId, currentUrl: '', currentTime: 0, isPlaying: false, guestControlEnabled: false };
     } catch (err) {
       logger.error({ err, roomId }, 'Failed to create room');
       throw err;
@@ -150,6 +154,7 @@ export const RoomRepository = {
           currentUrl: cached.current_url,
           currentTime: parseFloat(cached.current_time),
           isPlaying: cached.is_playing === 'true',
+          guestControlEnabled: cached.guest_control_enabled === 'true',
           updatedAt: cached.updated_at,
         };
       }
@@ -173,6 +178,7 @@ export const RoomRepository = {
         current_url: room.current_url || '',
         current_time: String(room.current_time),
         is_playing: String(room.is_playing),
+        guest_control_enabled: String(room.guest_control_enabled || false),
         updated_at: room.updated_at.toISOString(),
       });
 
@@ -182,6 +188,7 @@ export const RoomRepository = {
         currentUrl: room.current_url,
         currentTime: room.current_time,
         isPlaying: room.is_playing,
+        guestControlEnabled: room.guest_control_enabled || false,
       };
     } catch (err) {
       logger.error({ err, roomId }, 'Failed to get room');
@@ -211,6 +218,10 @@ export const RoomRepository = {
         fields.push(`"host_user_id" = $${paramCount++}`);
         values.push(updates.hostUserId);
       }
+      if (updates.guestControlEnabled !== undefined) {
+        fields.push(`"guest_control_enabled" = $${paramCount++}`);
+        values.push(updates.guestControlEnabled);
+      }
 
       if (fields.length === 0) return;
 
@@ -229,6 +240,7 @@ export const RoomRepository = {
       if (updates.currentTime !== undefined) redisUpdate.current_time = String(updates.currentTime);
       if (updates.isPlaying !== undefined) redisUpdate.is_playing = String(updates.isPlaying);
       if (updates.hostUserId !== undefined) redisUpdate.host_user_id = updates.hostUserId;
+      if (updates.guestControlEnabled !== undefined) redisUpdate.guest_control_enabled = String(updates.guestControlEnabled);
       redisUpdate.updated_at = new Date().toISOString();
 
       await redis.client.hSet(config.keys.room(roomId), redisUpdate);
