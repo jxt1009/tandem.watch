@@ -29,8 +29,9 @@ export function createPeerConnectionFactory({ stateManager, sendSignal, remoteSt
       if (!stream) {
         console.log('[PeerConnection] Creating new MediaStream for peer:', peerId);
         stream = new MediaStream();
-        remoteStreams.set(peerId, stream);
       }
+      // Always keep remoteStreams in sync so cleanup works correctly
+      remoteStreams.set(peerId, stream);
       if (event.track) {
         console.log('[PeerConnection] Adding track to stream:', event.track.kind, event.track.id);
         try { 
