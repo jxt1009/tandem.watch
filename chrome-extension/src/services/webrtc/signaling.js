@@ -1,4 +1,21 @@
 export function createSignalingHandlers({ getState, peerConnections, peersThatLeft, getLocalStream, createPeer, sendSignal, addOrReplaceTrack, clearReconnection, removeRemoteVideo }) {
+  // Buffer ICE candidates that arrive before setRemoteDescription is called
+  const pendingCandidates = new Map();
+
+  async function flushPendingCandidates(peerId, pc) {
+    const queued = pendingCandidates.get(peerId);
+    if (!queued || queued.length === 0) return;
+    pendingCandidates.delete(peerId);
+    console.log('[Signaling] Flushing', queued.length, 'buffered ICE candidates for', peerId);
+    for (const c of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (err) {
+        console.warn('[Signaling] Error adding buffered ICE candidate:', err);
+      }
+    }
+  }
+
   return {
     async handleJoin(from) {
       console.log('[Signaling] Handling JOIN from', from);
@@ -93,18 +110,18 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
       let pc = peerConnections.get(from);
       if (pc) {
         console.log('[Signaling] Existing peer connection state:', pc.signalingState);
-        if (pc.signalingState !== 'closed' && pc.signalingState !== 'stable') {
-          console.log('[Signaling] Closing existing peer connection in state:', pc.signalingState);
-          try { pc.close(); } catch (e) {}
+        if (pc.signalingState === 'closed') {
+          // Dead connection — discard and create fresh
           peerConnections.delete(from);
           pc = null;
-        } else if (pc.signalingState === 'stable') {
-          // If stable, this might be a renegotiation - close and recreate
-          console.log('[Signaling] Closing stable peer connection for renegotiation');
+        } else if (pc.signalingState !== 'stable') {
+          // Glare: we sent an offer and received one simultaneously — restart
+          console.log('[Signaling] Closing existing peer connection in state:', pc.signalingState, '(glare)');
           try { pc.close(); } catch (e) {}
           peerConnections.delete(from);
           pc = null;
         }
+        // else: signalingState === 'stable' — reuse for renegotiation (do NOT close)
       }
       if (!pc) {
         console.log('[Signaling] Creating new peer connection for', from);
@@ -117,6 +134,7 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
       try {
         console.log('[Signaling] Setting remote description, current state:', pc.signalingState);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await flushPendingCandidates(from, pc);
         const stream = getLocalStream();
         console.log('[Signaling] Local stream:', stream, 'tracks:', stream ? stream.getTracks().length : 0);
         if (stream) {
@@ -156,6 +174,7 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
         console.log('[Signaling] Setting remote description from ANSWER');
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushPendingCandidates(from, pc);
           console.log('[Signaling] Remote description set successfully');
         } catch (err) {
           console.error('[Signaling] Error handling answer:', err.name, err.message);
@@ -181,19 +200,30 @@ export function createSignalingHandlers({ getState, peerConnections, peersThatLe
       console.log('[Signaling] Handling ICE_CANDIDATE from', from);
       const pc = peerConnections.get(from);
       if (pc) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          console.log('[Signaling] ICE candidate added successfully');
-        } catch (err) {
-          console.warn('[Signaling] Error adding ICE candidate', err);
+        if (pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('[Signaling] ICE candidate added successfully');
+          } catch (err) {
+            console.warn('[Signaling] Error adding ICE candidate', err);
+          }
+        } else {
+          // Remote description not set yet — buffer for later
+          console.log('[Signaling] Buffering ICE candidate for', from, '(no remote description yet)');
+          if (!pendingCandidates.has(from)) pendingCandidates.set(from, []);
+          pendingCandidates.get(from).push(candidate);
         }
       } else {
-        console.warn('[Signaling] No peer connection found for ICE candidate from', from);
+        // No peer connection yet — buffer optimistically in case it's created shortly
+        console.log('[Signaling] Buffering ICE candidate for', from, '(no peer connection yet)');
+        if (!pendingCandidates.has(from)) pendingCandidates.set(from, []);
+        pendingCandidates.get(from).push(candidate);
       }
     },
     handleLeave(from) {
       console.log('[Signaling] Handling LEAVE from', from);
       peersThatLeft.add(from);
+      pendingCandidates.delete(from);
       const pc = peerConnections.get(from);
       if (pc) {
         try { pc.close(); } catch (e) {}
