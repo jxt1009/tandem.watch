@@ -14,8 +14,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html",
-    "default_title": "tandem.watch",
+    "default_title": "tandem.watch — click to toggle party panel",
     "default_icons": {
       "16": "images/icon16.png",
       "48": "images/icon48.png",

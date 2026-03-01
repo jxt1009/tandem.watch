@@ -2,6 +2,13 @@ import { BackgroundService } from './BackgroundService.js';
 
 const backgroundService = new BackgroundService();
 
+// When the extension icon is clicked, toggle the in-page launcher/sidebar
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.url && tab.url.startsWith('https://www.netflix.com/')) {
+    chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_LAUNCHER' }).catch(() => {});
+  }
+});
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'START_PARTY') {
     backgroundService.startParty(request.roomId, request.username, request.pin).then(() => {
@@ -206,11 +213,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else {
       sendResponse({ success: false, error: 'Not connected to signaling server' });
     }
-    return true;
-  }
-
-  if (request.type === 'OPEN_POPUP') {
-    chrome.action.openPopup();
     return true;
   }
 });

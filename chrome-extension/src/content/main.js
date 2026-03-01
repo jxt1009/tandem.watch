@@ -5,6 +5,7 @@ import { WebRTCManager } from '../services/webrtc/WebRTCManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { URLSync } from '../managers/url/URLSync.js';
 import { SidebarPanel } from '../ui/SidebarPanel.js';
+import { PartyLauncher } from '../ui/PartyLauncher.js';
 import { CONFIG } from '../config.js';
 
 console.log('[Content Script] Initializing managers...');
@@ -126,6 +127,60 @@ function checkJoinFromLink() {
 let localStream = null;
 let videoElementMonitor = null;
 let sidebarPanel = null;
+
+// Floating launcher — always mounted on Netflix pages, hidden when party is active
+const partyLauncher = new PartyLauncher({
+  onStartParty: (username) => {
+    partyLauncher.setLoading(true);
+    const pin = Math.floor(100000 + Math.random() * 900000).toString();
+    chrome.runtime.sendMessage({ type: 'START_PARTY', username: username || undefined, pin }, (response) => {
+      partyLauncher.setLoading(false);
+      if (!response || !response.success) {
+        partyLauncher.showStatus(response?.error || 'Failed to start party', true);
+        partyLauncher.show();
+      }
+    });
+  },
+  onJoinParty: (roomCode, pin, username) => {
+    partyLauncher.setLoading(true);
+    // roomCode may be a short ID — resolve to roomId via server
+    const serverUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'https://').replace(/\/ws$/, '');
+    fetch(`${serverUrl}/room/${encodeURIComponent(roomCode)}`)
+      .then(r => r.json())
+      .then(data => {
+        const roomId = data.roomId || roomCode;
+        chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: username || undefined, pin: pin || undefined }, (response) => {
+          partyLauncher.setLoading(false);
+          if (!response || !response.success) {
+            partyLauncher.showStatus(response?.error || 'Failed to join party', true);
+            partyLauncher.show();
+          }
+        });
+      })
+      .catch(() => {
+        // Fall back to using roomCode directly as roomId
+        chrome.runtime.sendMessage({ type: 'START_PARTY', roomId: roomCode, username: username || undefined, pin: pin || undefined }, (response) => {
+          partyLauncher.setLoading(false);
+          if (!response || !response.success) {
+            partyLauncher.showStatus(response?.error || 'Failed to join party', true);
+            partyLauncher.show();
+          }
+        });
+      });
+  },
+});
+
+// Mount launcher once the DOM is ready (content script runs at document_start)
+function mountLauncher() {
+  if (document.body) {
+    partyLauncher.mount();
+    // If party was already active (e.g. restored session), hide the launcher
+    if (wasPartyActive) partyLauncher.hide();
+  } else {
+    document.addEventListener('DOMContentLoaded', () => partyLauncher.mount(), { once: true });
+  }
+}
+mountLauncher();
 
 // Try to get a media stream, gracefully falling back if camera or mic is absent.
 // Returns a MediaStream (possibly with fewer tracks than requested) or null if no
@@ -284,6 +339,7 @@ checkJoinFromLink();
             sidebarPanel.setUsername(restoredUsername);
             fetchAndSetShareInfo(response.roomId, response.pin || null);
             webrtcManager.setSidebarPanel(sidebarPanel);
+            partyLauncher.hide();
           }
           
           // Re-obtain media stream for WebRTC signaling
@@ -334,6 +390,18 @@ checkJoinFromLink();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Content Script] Received message:', request.type);
+
+  if (request.type === 'TOGGLE_LAUNCHER') {
+    // Extension icon was clicked — toggle launcher or sidebar
+    if (sidebarPanel) {
+      sidebarPanel._toggleCollapse?.();
+    } else {
+      partyLauncher.toggle();
+    }
+    sendResponse({ success: true });
+    return true;
+  }
+
   if (request.type === 'GET_MEDIA_STATE') {
     const audioTrack = localStream ? localStream.getAudioTracks()[0] : null;
     const videoTrack = localStream ? localStream.getVideoTracks()[0] : null;
@@ -474,11 +542,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sidebarPanel.setLocalUserId(request.userId, myUsername);
     sidebarPanel.setUsername(myUsername);
 
+    // Attach local stream to the sidebar tile if we already have it
+    // (REQUEST_MEDIA_STREAM completes before PARTY_STARTED arrives)
+    if (localStream) {
+      sidebarPanel.setLocalStream(request.userId, localStream);
+      const audioEnabled = localStream.getAudioTracks()[0]?.enabled ?? false;
+      const videoEnabled = localStream.getVideoTracks()[0]?.enabled ?? false;
+      sidebarPanel.setMediaState(audioEnabled, videoEnabled);
+      // Clean up the floating local preview if it was created as a fallback
+      uiManager.removeLocalPreview();
+    }
+
     // Fetch/display share info (room code + PIN + invite link)
     fetchAndSetShareInfo(request.roomId, request.pin || null);
 
     // Wire sidebar into WebRTC so video streams route to tiles
     webrtcManager.setSidebarPanel(sidebarPanel);
+
+    // Hide the in-page launcher — sidebar takes over
+    partyLauncher.hide();
     
     // Set Netflix volume to 15%
     setTimeout(() => {
@@ -560,6 +642,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       localStream.getTracks().forEach(t => t.stop());
       localStream = null;
     }
+    // Show the launcher again so the user can start/join another party
+    partyLauncher.show();
     sendResponse({ success: true });
   }
 
