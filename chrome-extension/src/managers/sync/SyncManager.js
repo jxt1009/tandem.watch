@@ -24,6 +24,7 @@ export class SyncManager {
     this.hostUserId = null;
     this.guestControlEnabled = false;
     this.heartbeatInterval = null;
+    this._pendingAcks = new Map(); // control → { timerId, cancel }
 
     this.remote = createRemoteHandlers({
       state: this.state,
@@ -359,6 +360,36 @@ export class SyncManager {
     this.guestControlEnabled = enabled;
   }
 
+  _scheduleSafetyRetry(control, currentTime, video) {
+    // Cancel any existing pending retry for this control
+    const existing = this._pendingAcks.get(control);
+    if (existing) { clearTimeout(existing.timerId); }
+
+    const timerId = setTimeout(async () => {
+      this._pendingAcks.delete(control);
+      if (!this.isOnWatchPage() || !this.canBroadcast()) return;
+      // Only retry if still in the expected state
+      const isPaused = await this.netflix.isPaused();
+      const expectPaused = control === 'pause';
+      if (isPaused !== expectPaused) return; // already in correct state — ACK may have been delayed
+      const retryTimeMs = await this.netflix.getCurrentTime();
+      const retryTime = retryTimeMs != null ? retryTimeMs / 1000 : (video?.currentTime || 0);
+      console.log('[SyncManager] No ACK received — safety retry', control.toUpperCase(), 'at', retryTime.toFixed(2) + 's');
+      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control, currentTime: retryTime, eventTimestamp: Date.now() });
+    }, 3000); // generous window — fires only if no ACK arrives
+
+    this._pendingAcks.set(control, { timerId });
+  }
+
+  handlePlaybackAck(control) {
+    const pending = this._pendingAcks.get(control);
+    if (pending) {
+      clearTimeout(pending.timerId);
+      this._pendingAcks.delete(control);
+      console.log('[SyncManager] ACK received for', control.toUpperCase(), '— retry cancelled');
+    }
+  }
+
   async broadcastPlay(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring PLAY event - not on /watch page');
@@ -372,20 +403,11 @@ export class SyncManager {
       const currentTimeMs = await this.netflix.getCurrentTime();
       const currentTime = currentTimeMs != null ? currentTimeMs / 1000 : (video?.currentTime || 0);
       console.log('[SyncManager] Broadcasting PLAY event at', currentTime.toFixed(2) + 's');
-      this.state.safeSendMessage({ 
-        type: 'PLAY_PAUSE', 
-        control: 'play',
-        currentTime: currentTime,
-        eventTimestamp: Date.now()
-      });
+      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control: 'play', currentTime, eventTimestamp: Date.now() });
+      this._scheduleSafetyRetry('play', currentTime, video);
     } catch (e) {
       console.warn('[SyncManager] Error broadcasting play:', e);
-      this.state.safeSendMessage({ 
-        type: 'PLAY_PAUSE', 
-        control: 'play',
-        currentTime: video?.currentTime || 0,
-        eventTimestamp: Date.now()
-      });
+      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control: 'play', currentTime: video?.currentTime || 0, eventTimestamp: Date.now() });
     }
   }
 
@@ -402,20 +424,11 @@ export class SyncManager {
       const currentTimeMs = await this.netflix.getCurrentTime();
       const currentTime = currentTimeMs != null ? currentTimeMs / 1000 : (video?.currentTime || 0);
       console.log('[SyncManager] Broadcasting PAUSE event at', currentTime.toFixed(2) + 's');
-      this.state.safeSendMessage({ 
-        type: 'PLAY_PAUSE', 
-        control: 'pause',
-        currentTime: currentTime,
-        eventTimestamp: Date.now()
-      });
+      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control: 'pause', currentTime, eventTimestamp: Date.now() });
+      this._scheduleSafetyRetry('pause', currentTime, video);
     } catch (e) {
       console.warn('[SyncManager] Error broadcasting pause:', e);
-      this.state.safeSendMessage({ 
-        type: 'PLAY_PAUSE', 
-        control: 'pause',
-        currentTime: video?.currentTime || 0,
-        eventTimestamp: Date.now()
-      });
+      this.state.safeSendMessage({ type: 'PLAY_PAUSE', control: 'pause', currentTime: video?.currentTime || 0, eventTimestamp: Date.now() });
     }
   }
 

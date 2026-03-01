@@ -219,6 +219,14 @@ export class BackgroundService {
           });
         });
       }
+      if (message.type === 'PLAYBACK_ACK' && message.to === this.userId) {
+        // Receiver confirmed it applied our play/pause — cancel the safety retry
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'APPLY_PLAYBACK_ACK', control: message.control }).catch(() => {});
+          });
+        });
+      }
       if (message.type === 'SYNC_PLAYBACK' && message.userId !== this.userId) {
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {

@@ -1,7 +1,39 @@
 export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, urlSync, shouldAcceptLateSync, onInitialSyncApplied }) {
-  async function applyRemote(actionName, durationMs, actionFn) {
-    lock.set(durationMs);
-    try { await actionFn(); } catch (err) {
+  // Wait for a video DOM event to confirm an action took effect.
+  // Resolves early when the event fires; falls back to maxWaitMs if it never does.
+  function waitForVideoEvent(eventName, maxWaitMs) {
+    return new Promise(resolve => {
+      const video = netflix.getVideoElement();
+      if (!video) { resolve(false); return; }
+      let timer;
+      const done = (fired) => {
+        clearTimeout(timer);
+        resolve(fired);
+      };
+      timer = setTimeout(() => {
+        video.removeEventListener(eventName, onEvent);
+        done(false);
+      }, maxWaitMs);
+      const onEvent = () => done(true);
+      video.addEventListener(eventName, onEvent, { once: true });
+    });
+  }
+
+  async function applyRemote(actionName, maxDurationMs, actionFn, expectedEvent) {
+    lock.set(maxDurationMs);
+    try {
+      await actionFn();
+      if (expectedEvent) {
+        // Wait for the video element to confirm the action fired.
+        // Releases the lock early on success rather than always waiting maxDurationMs.
+        const fired = await waitForVideoEvent(expectedEvent, maxDurationMs);
+        if (fired) {
+          lock.clear();
+          console.log('[SyncManager] Lock released early — video emitted', expectedEvent);
+        }
+      }
+    } catch (err) {
+      lock.clear();
       console.error(`[SyncManager] Error applying remote ${actionName}:`, err);
     }
   }
@@ -218,27 +250,28 @@ export function createRemoteHandlers({ state, netflix, lock, isInitializedRef, u
       console.log('[SyncManager] Remote', control.toUpperCase(), 'from', fromUserId, 'at', currentTime?.toFixed(2) + 's');
       const adjustedTime = applyLatencyCompensation(currentTime, control === 'play', eventTimestamp);
 
-      await applyRemote(control, 1000, async () => {
+      await applyRemote(control, 1500, async () => {
         // Sync position first if provided
         if (Number.isFinite(adjustedTime) && adjustedTime > 0) {
           const localTimeMs = await netflix.getCurrentTime();
           const localTime = Number.isFinite(localTimeMs) ? (localTimeMs / 1000) : null;
           const drift = localTime != null ? Math.abs(localTime - adjustedTime) : 999;
           
-          // Lower threshold to 0.5s for tighter sync
           if (drift > 0.5) {
             console.log('[SyncManager] Syncing position before', control, '- drift:', drift.toFixed(2) + 's, seeking to', adjustedTime.toFixed(2) + 's');
             await netflix.seek(adjustedTime * 1000);
           }
         }
         
-        // Then apply play/pause
         if (control === 'play') {
           await netflix.play();
         } else {
           await netflix.pause();
         }
-      });
+      }, control === 'play' ? 'play' : 'pause'); // pass expected DOM event for event-driven lock release
+
+      // ACK back to sender so they can cancel their retry timer
+      state.safeSendMessage({ type: 'PLAYBACK_ACK', control, to: fromUserId });
     },
     async handleSeek(currentTime, isPlaying, fromUserId, eventTimestamp) {
       const adjustedTime = applyLatencyCompensation(currentTime, isPlaying, eventTimestamp);

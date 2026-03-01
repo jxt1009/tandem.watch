@@ -674,6 +674,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     syncManager.handlePlaybackControl(request.control, request.currentTime, request.fromUserId, request.eventTimestamp);
   }
 
+  if (request.type === 'APPLY_PLAYBACK_ACK') {
+    syncManager.handlePlaybackAck(request.control);
+  }
+
   // Passive sync removed - using event-based sync only
 
   if (request.type === 'APPLY_SEEK') {
