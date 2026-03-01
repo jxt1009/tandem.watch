@@ -30,52 +30,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (backgroundService.ws && backgroundService.ws.readyState === WebSocket.OPEN) {
       console.log('[Background] RESTORE_PARTY - WebSocket already connected, reusing connection');
       backgroundService.roomId = request.roomId;
-      backgroundService.intentionalDisconnect = false; // Reset flag so reconnection works
+      backgroundService.intentionalDisconnect = false;
       
-      // Just send a JOIN message to rejoin the room
+      // Re-register with signaling server so other peers know we're back
       console.log('[Background] Sending JOIN for room:', request.roomId, 'userId:', backgroundService.userId);
       backgroundService.ws.send(JSON.stringify({ 
         type: 'JOIN', 
         userId: backgroundService.userId, 
-        roomId: backgroundService.roomId, 
+        roomId: backgroundService.roomId,
+        username: backgroundService.username || null,
+        pin: backgroundService.pin || null,
         timestamp: Date.now() 
       }));
       
-      // Respond immediately but delay the PARTY_STARTED notification slightly
-      // to give the server time to process the JOIN
-      setTimeout(() => {
-        // Notify content script that party is active
-        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
-          tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { 
-              type: 'PARTY_STARTED', 
-              userId: backgroundService.userId, 
-              roomId: backgroundService.roomId 
-            }).catch(() => {});
-          });
-        });
-      }, 150); // 150ms delay to ensure JOIN is processed by server
-      
-      // But respond to content script immediately so it knows restoration succeeded
+      // Respond with all state info — content script handles the UI itself (no PARTY_STARTED needed)
       sendResponse({ 
         success: true, 
         userId: backgroundService.userId,
-        roomId: backgroundService.roomId 
+        roomId: backgroundService.roomId,
+        username: backgroundService.username || null,
+        pin: backgroundService.pin || null,
       });
     } else {
       // WebSocket is not connected, need to reconnect
       console.log('[Background] RESTORE_PARTY - WebSocket not connected, reconnecting');
       backgroundService.stopParty(false);
-      backgroundService.startParty(request.roomId).then(() => {
+      backgroundService.startParty(request.roomId, request.username, request.pin).then(() => {
         sendResponse({ 
           success: true, 
           userId: backgroundService.userId,
-          roomId: backgroundService.roomId 
+          roomId: backgroundService.roomId,
+          username: backgroundService.username || null,
+          pin: backgroundService.pin || null,
         });
       }).catch(err => {
         sendResponse({ success: false, error: err.message });
       });
-      return true; // Keep message channel open for async response
+      return true;
     }
   }
 

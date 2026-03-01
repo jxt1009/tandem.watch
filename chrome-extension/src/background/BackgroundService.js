@@ -485,6 +485,14 @@ export class BackgroundService {
   }
 
   getStatus() {
-    return { isConnected: this.isConnected, roomId: this.roomId, userId: this.userId, hasLocalStream: !!this.localStream, pin: this.pin };
+    return {
+      isConnected: this.isConnected,
+      roomId: this.roomId,
+      userId: this.userId,
+      username: this.username || null,
+      pin: this.pin || null,
+      hasLocalStream: !!this.localStream,
+      isActive: this.isConnected && !!this.roomId,
+    };
   }
 }

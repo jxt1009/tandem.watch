@@ -284,109 +284,129 @@ async function fetchAndSetShareInfo(roomId, pin) {
 
 checkJoinFromLink();
 
+// Shared restoration helper — called from both the sessionStorage and GET_STATUS paths
+let _restorationInProgress = false;
+
+function applyPartyRestore(response) {
+  if (stateManager.isActive()) {
+    console.log('[Content Script] Party already active, skipping duplicate restore');
+    return;
+  }
+  console.log('[Content Script] Applying party restore for userId:', response.userId);
+  stateManager.startParty(response.userId, response.roomId);
+
+  if (!sidebarPanel) {
+    sidebarPanel = new SidebarPanel({
+      onLeave: () => { chrome.runtime.sendMessage({ type: 'STOP_PARTY' }); },
+      onToggleGuestControl: (enabled) => {
+        stateManager.safeSendMessage({ type: 'TOGGLE_GUEST_CONTROL', enabled });
+        syncManager.setGuestControlEnabled(enabled);
+      },
+      onTransferHost: (targetUserId) => {
+        stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
+      },
+      onToggleMic: () => {
+        if (!localStream) return;
+        const tracks = localStream.getAudioTracks();
+        if (!tracks.length) return;
+        const newEnabled = !tracks[0].enabled;
+        tracks.forEach(t => { t.enabled = newEnabled; });
+        sidebarPanel.setMediaState(newEnabled, localStream.getVideoTracks()[0]?.enabled ?? true);
+      },
+      onToggleCamera: () => {
+        if (!localStream) return;
+        const tracks = localStream.getVideoTracks();
+        if (!tracks.length) return;
+        const newEnabled = !tracks[0].enabled;
+        tracks.forEach(t => { t.enabled = newEnabled; });
+        sidebarPanel.setMediaState(localStream.getAudioTracks()[0]?.enabled ?? true, newEnabled);
+      },
+      onUsernameChange: (newName) => {
+        if (chrome?.storage?.local) chrome.storage.local.set({ tandemUsername: newName }, () => {});
+        chrome.runtime.sendMessage({ type: 'UPDATE_USERNAME', username: newName });
+      },
+    });
+    sidebarPanel.mount();
+    const restoredUsername = response.username || response.userId;
+    sidebarPanel.setLocalUserId(response.userId, restoredUsername);
+    sidebarPanel.setUsername(restoredUsername);
+    fetchAndSetShareInfo(response.roomId, response.pin || null);
+    webrtcManager.setSidebarPanel(sidebarPanel);
+    partyLauncher.hide();
+  }
+
+  // Re-obtain media stream and finish setup
+  getLocalStreamWithFallback().then(stream => {
+    localStream = stream;
+    if (stream) {
+      webrtcManager.setLocalStream(stream);
+      webrtcManager.onLocalStreamAvailable(stream);
+      if (sidebarPanel) {
+        const myId = stateManager.getUserId();
+        if (myId) sidebarPanel.setLocalStream(myId, stream);
+        sidebarPanel.setMediaState(
+          stream.getAudioTracks()[0]?.enabled ?? false,
+          stream.getVideoTracks()[0]?.enabled ?? false
+        );
+      }
+    } else {
+      console.warn('[Content Script] No media devices after restoration — rejoining without camera/mic');
+    }
+    syncManager.teardown();
+    syncManager.setup().catch(err => console.error('[Content Script] Sync manager setup failed after restore:', err));
+    urlSync.start();
+    startVideoElementMonitoring();
+  }).catch(err => console.error('[Content Script] Media stream failed after restore:', err))
+    .finally(() => setTimeout(() => stateManager.setRestoringFlag(false), 2000));
+}
+
+// Path A: sessionStorage has tandem_restore (beforeunload fired before page reload)
 (function checkRestorePartyState() {
   const restorationState = urlSync.getRestorationState();
-  if (restorationState) {
-    console.log('[Content Script] Restoring party state for room:', restorationState.roomId);
-    urlSync.clearState();
-    stateManager.setRestoringFlag(true);
-    
-    setTimeout(function() {
-      console.log('[Content Script] Sending RESTORE_PARTY message');
-      chrome.runtime.sendMessage({ type: 'RESTORE_PARTY', roomId: restorationState.roomId }, (response) => {
-        if (response && response.success) {
-          console.log('[Content Script] Party restoration successful - setting state with userId:', response.userId);
-          // Immediately set the userId and roomId so we can handle incoming messages
-          stateManager.startParty(response.userId, response.roomId);
-
-          // Re-mount sidebar for this session
-          if (!sidebarPanel) {
-            sidebarPanel = new SidebarPanel({
-              onLeave: () => { chrome.runtime.sendMessage({ type: 'STOP_PARTY' }); },
-              onToggleGuestControl: (enabled) => {
-                stateManager.safeSendMessage({ type: 'TOGGLE_GUEST_CONTROL', enabled });
-                syncManager.setGuestControlEnabled(enabled);
-              },
-              onTransferHost: (targetUserId) => {
-                stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
-              },
-              onToggleMic: () => {
-                if (!localStream) return;
-                const tracks = localStream.getAudioTracks();
-                if (!tracks.length) return;
-                const newEnabled = !tracks[0].enabled;
-                tracks.forEach(t => { t.enabled = newEnabled; });
-                const videoEnabled = localStream.getVideoTracks()[0]?.enabled ?? true;
-                sidebarPanel.setMediaState(newEnabled, videoEnabled);
-              },
-              onToggleCamera: () => {
-                if (!localStream) return;
-                const tracks = localStream.getVideoTracks();
-                if (!tracks.length) return;
-                const newEnabled = !tracks[0].enabled;
-                tracks.forEach(t => { t.enabled = newEnabled; });
-                const audioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
-                sidebarPanel.setMediaState(audioEnabled, newEnabled);
-              },
-              onUsernameChange: (newName) => {
-                if (chrome?.storage?.local) chrome.storage.local.set({ tandemUsername: newName }, () => {});
-                chrome.runtime.sendMessage({ type: 'UPDATE_USERNAME', username: newName });
-              },
-            });
-            sidebarPanel.mount();
-            const restoredUsername = response.username || response.userId;
-            sidebarPanel.setLocalUserId(response.userId, restoredUsername);
-            sidebarPanel.setUsername(restoredUsername);
-            fetchAndSetShareInfo(response.roomId, response.pin || null);
-            webrtcManager.setSidebarPanel(sidebarPanel);
-            partyLauncher.hide();
-          }
-          
-          // Re-obtain media stream for WebRTC signaling
-          console.log('[Content Script] Re-obtaining media stream after navigation');
-          getLocalStreamWithFallback()
-            .then(stream => {
-              localStream = stream;
-              if (stream) {
-                console.log('[Content Script] Media stream obtained after restoration');
-                webrtcManager.setLocalStream(stream);
-                webrtcManager.onLocalStreamAvailable(stream);
-                if (sidebarPanel) {
-                  const myId = stateManager.getUserId();
-                  if (myId) sidebarPanel.setLocalStream(myId, stream);
-                  const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? false;
-                  const videoEnabled = stream.getVideoTracks()[0]?.enabled ?? false;
-                  sidebarPanel.setMediaState(audioEnabled, videoEnabled);
-                } else {
-                  uiManager.attachLocalPreview(stream);
-                }
-              } else {
-                console.warn('[Content Script] No media devices after restoration — rejoining without camera/mic');
-              }
-
-              // Re-setup sync manager
-              syncManager.teardown();
-              syncManager.setup().catch(err => {
-                console.error('[Content Script] Failed to setup sync manager after restoration:', err);
-              });
-
-              // Start URL monitoring if not already started
-              urlSync.start();
-              startVideoElementMonitoring();
-            })
-            .catch(err => {
-              console.error('[Content Script] Failed to get media stream after restoration:', err);
-            });
-        } else {
-          console.error('[Content Script] Party restoration failed:', response ? response.error : 'Unknown error');
-        }
-        setTimeout(function() {
-          stateManager.setRestoringFlag(false);
-        }, 2000);
-      });
-    }, 1000);
-  }
+  if (!restorationState) return;
+  console.log('[Content Script] Session storage restore for room:', restorationState.roomId);
+  urlSync.clearState();
+  stateManager.setRestoringFlag(true);
+  _restorationInProgress = true;
+  chrome.runtime.sendMessage({ type: 'RESTORE_PARTY', roomId: restorationState.roomId }, (response) => {
+    _restorationInProgress = false;
+    if (response && response.success) {
+      applyPartyRestore(response);
+    } else {
+      console.error('[Content Script] Party restoration failed:', response?.error);
+      setTimeout(() => stateManager.setRestoringFlag(false), 2000);
+    }
+  });
 })();
+
+// Path B: background has active party but sessionStorage has no record
+// (covers cases where beforeunload didn't fire, e.g. Netflix navigated via location.href)
+function checkBackgroundPartyState() {
+  if (_restorationInProgress || stateManager.isActive() || urlSync.getRestorationState()) return;
+  chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (status) => {
+    if (!status || !status.isActive) return;
+    if (_restorationInProgress || stateManager.isActive()) return; // raced with Path A
+    console.log('[Content Script] Background has active party (no sessionStorage) — restoring');
+    stateManager.setRestoringFlag(true);
+    _restorationInProgress = true;
+    chrome.runtime.sendMessage({ type: 'RESTORE_PARTY', roomId: status.roomId }, (response) => {
+      _restorationInProgress = false;
+      if (response && response.success) {
+        applyPartyRestore(response);
+      } else {
+        console.error('[Content Script] Background restore failed:', response?.error);
+        setTimeout(() => stateManager.setRestoringFlag(false), 2000);
+      }
+    });
+  });
+}
+
+// Run path B after DOM is ready (need document.body to mount sidebar)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkBackgroundPartyState, { once: true });
+} else {
+  checkBackgroundPartyState();
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Content Script] Received message:', request.type);
