@@ -143,10 +143,10 @@ const partyLauncher = new PartyLauncher({
   },
   onJoinParty: (roomCode, pin, username) => {
     partyLauncher.setLoading(true);
-    // roomCode may be a short ID — resolve to roomId via server
+    // roomCode may be a short ID — resolve to full roomId via API
     const serverUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'https://').replace(/\/ws$/, '');
-    fetch(`${serverUrl}/room/${encodeURIComponent(roomCode)}`)
-      .then(r => r.json())
+    fetch(`${serverUrl}/api/room/${encodeURIComponent(roomCode)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then(data => {
         const roomId = data.roomId || roomCode;
         chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: username || undefined, pin: pin || undefined }, (response) => {
@@ -158,7 +158,7 @@ const partyLauncher = new PartyLauncher({
         });
       })
       .catch(() => {
-        // Fall back to using roomCode directly as roomId
+        // Server unreachable or short ID not found — try roomCode as raw roomId
         chrome.runtime.sendMessage({ type: 'START_PARTY', roomId: roomCode, username: username || undefined, pin: pin || undefined }, (response) => {
           partyLauncher.setLoading(false);
           if (!response || !response.success) {

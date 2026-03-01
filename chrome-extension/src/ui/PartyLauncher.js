@@ -65,7 +65,7 @@ export class PartyLauncher {
     const pill = document.createElement('button');
     pill.className = 'tandem-lnch-pill';
     pill.title = 'tandem.watch – Start or join a party';
-    pill.innerHTML = `<span class="tandem-lnch-icon">🎬</span><span class="tandem-lnch-label">tandem</span>`;
+    pill.innerHTML = `<span class="tandem-lnch-icon">🎬</span><span class="tandem-lnch-label">Start a Party?</span>`;
     pill.addEventListener('click', (e) => {
       e.stopPropagation();
       this._setExpanded(!this._expanded);
@@ -212,36 +212,40 @@ export class PartyLauncher {
     s.textContent = `
       #tandem-launcher {
         position: fixed;
-        bottom: 24px;
-        left: 24px;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
         z-index: 2147483640;
         display: flex;
-        flex-direction: column-reverse;
-        align-items: flex-start;
+        flex-direction: column;
+        align-items: center;
         gap: 8px;
         font-family: 'Netflix Sans', 'Helvetica Neue', Arial, sans-serif;
       }
       .tandem-lnch-pill {
         display: flex;
         align-items: center;
-        gap: 6px;
-        padding: 8px 14px;
-        background: rgba(20, 20, 20, 0.92);
-        border: 1px solid rgba(255,255,255,0.12);
+        gap: 7px;
+        padding: 8px 18px;
+        background: rgba(20, 20, 20, 0.85);
+        border: 1px solid rgba(255,255,255,0.1);
         border-radius: 999px;
         color: #e5e7eb;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
-        backdrop-filter: blur(8px);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-        transition: background 0.15s, transform 0.1s;
-        letter-spacing: 0.3px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+        transition: background 0.15s, opacity 0.15s;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
       }
-      .tandem-lnch-pill:hover { background: rgba(40,40,40,0.96); }
-      .tandem-lnch-pill[data-active="true"] { border-color: rgba(229,9,20,0.6); }
-      .tandem-lnch-icon { font-size: 16px; line-height: 1; }
-      .tandem-lnch-label { color: #e50914; font-weight: 700; }
+      .tandem-lnch-pill:hover { background: rgba(35,35,35,0.95); opacity: 1 !important; }
+      .tandem-lnch-pill[data-active="true"] { border-color: rgba(229,9,20,0.5); }
+      /* Fade the pill slightly when not hovered so it doesn't distract during viewing */
+      .tandem-lnch-pill { opacity: 0.7; }
+      .tandem-lnch-icon { font-size: 15px; line-height: 1; }
+      .tandem-lnch-label { color: #fff; }
       .tandem-lnch-panel {
         flex-direction: column;
         gap: 10px;
