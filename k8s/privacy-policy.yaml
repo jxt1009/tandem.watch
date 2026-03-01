@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: privacy-policy-html
+  namespace: default
+data:
+  privacy.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Privacy Policy - tandem.watch</title>
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                line-height: 1.6;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+                color: #333;
+                background-color: #f9f9f9;
+            }
+            h1 { color: #222; border-bottom: 3px solid #e74c3c; padding-bottom: 10px; }
+            h2 { color: #333; margin-top: 30px; }
+            code { background-color: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+            .contact { background-color: #e8f4f8; padding: 15px; border-left: 4px solid #3498db; margin-top: 20px; }
+            ul { line-height: 1.8; }
+            .updated { color: #666; font-size: 0.9em; }
+        </style>
+    </head>
+    <body>
+        <h1>Privacy Policy for tandem.watch</h1>
+        <p class="updated"><strong>Last Updated:</strong> February 2026</p>
+
+        <h2>Overview</h2>
+        <p>tandem.watch is a Chrome extension that enables synchronized Netflix watching with peer-to-peer video and audio chat. This privacy policy explains what data we collect and how we handle it.</p>
+
+        <h2>Data We Collect</h2>
+
+        <h3>1. Real-Time Playback Activity</h3>
+        <ul>
+            <li><strong>What:</strong> Netflix playback events (play, pause, seek, current timestamp)</li>
+            <li><strong>Why:</strong> To synchronize playback across all viewers in a watch party</li>
+            <li><strong>Where:</strong> Transmitted via WebSocket to our signaling server, then relayed to other participants</li>
+            <li><strong>Retention:</strong> Not stored persistently; discarded when the watch party ends</li>
+        </ul>
+
+        <h3>2. Peer-to-Peer Video and Audio</h3>
+        <ul>
+            <li><strong>What:</strong> Live video stream from your webcam and audio from your microphone</li>
+            <li><strong>Why:</strong> To enable face-to-face communication during watch parties</li>
+            <li><strong>How:</strong> Streamed directly peer-to-peer using WebRTC with DTLS-SRTP encryption</li>
+            <li><strong>Storage:</strong> Never transmitted to or stored on our central servers—data goes directly between participants only</li>
+        </ul>
+
+        <h3>3. Room Identification</h3>
+        <ul>
+            <li><strong>What:</strong> Room ID used to join a watch party</li>
+            <li><strong>Why:</strong> To organize viewers into separate watch parties and prevent unauthorized access</li>
+            <li><strong>Retention:</strong> Maintained only while the room is active</li>
+        </ul>
+
+        <h2>Data We Do NOT Collect</h2>
+        <ul>
+            <li>Personal information (name, email, address, etc.)</li>
+            <li>Your Netflix account credentials</li>
+            <li>Your IP address or location</li>
+            <li>Browsing history outside of Netflix</li>
+            <li>Payment or financial information</li>
+            <li>Health or biometric data</li>
+        </ul>
+
+        <h2>How Your Data is Protected</h2>
+        <ol>
+            <li><strong>P2P Encryption:</strong> Video and audio streams use DTLS-SRTP encryption end-to-end</li>
+            <li><strong>No Central Storage:</strong> Media streams never touch our servers—they go directly between peers</li>
+            <li><strong>Minimal Server Data:</strong> Our signaling server only stores temporary metadata (room IDs, connection states)</li>
+            <li><strong>Browser Sandbox:</strong> The extension runs within Chrome's security sandbox</li>
+        </ol>
+
+        <h2>Third-Party Services</h2>
+        <p>Our signaling server may use STUN/TURN services to help establish peer connections:</p>
+        <ul>
+            <li><strong>STUN:</strong> Used to discover your public IP for direct connections</li>
+            <li><strong>TURN:</strong> Used only as a fallback if a direct connection cannot be established</li>
+            <li>These services do not log your data</li>
+        </ul>
+
+        <h2>Data Sharing</h2>
+        <p>We <strong>do not</strong> sell, transfer, or share your data with third parties. Data is only shared:</p>
+        <ul>
+            <li>Between peers in your watch party (directly via P2P)</li>
+            <li>With our signaling server (temporarily, for connection management)</li>
+            <li>Where required by law (if legally compelled)</li>
+        </ul>
+
+        <h2>Your Controls</h2>
+        <ul>
+            <li><strong>Camera/Microphone:</strong> You grant permission when prompted; you can revoke permissions in Chrome settings</li>
+            <li><strong>Room Participation:</strong> You control who joins your watch party by sharing the room ID</li>
+            <li><strong>Extension Removal:</strong> Uninstall the extension anytime to stop all data collection</li>
+        </ul>
+
+        <h2>Contact</h2>
+        <div class="contact">
+            For questions about this privacy policy, contact: <strong>privacy@toper.dev</strong>
+        </div>
+
+        <h2>Changes to This Policy</h2>
+        <p>We may update this policy occasionally. We will notify you by updating the "Last Updated" date and posting the new version at privacy.toper.dev.</p>
+
+        <hr style="margin-top: 40px; border: none; border-top: 1px solid #ddd;">
+        <p style="font-size: 0.9em; color: #666; margin-top: 20px;"><em>For Chrome Web Store:</em> This extension does not use personal data for advertising, marketing, or any purpose unrelated to synchronized watching.</p>
+    </body>
+    </html>
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: privacy-policy-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: privacy-policy-server
+  template:
+    metadata:
+      labels:
+        app: privacy-policy-server
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: privacy-policy-html
+          mountPath: /usr/share/nginx/html
+        - name: nginx-config
+          mountPath: /etc/nginx/conf.d
+      volumes:
+      - name: privacy-policy-html
+        configMap:
+          name: privacy-policy-html
+          items:
+          - key: privacy.html
+            path: index.html
+      - name: nginx-config
+        configMap:
+          name: privacy-policy-nginx-config
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: privacy-policy-nginx-config
+  namespace: default
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: privacy-policy-service
+  namespace: default
+spec:
+  selector:
+    app: privacy-policy-server
+  type: ClusterIP
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: privacy-policy-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - privacy.toper.dev
+    secretName: privacy-toper-dev-tls
+  rules:
+  - host: privacy.toper.dev
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: privacy-policy-service
+            port:
+              number: 80
