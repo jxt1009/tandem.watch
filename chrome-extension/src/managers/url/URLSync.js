@@ -1,5 +1,5 @@
 export class URLSync {
-  constructor(stateManager, onWatchPageChange, onNavigateToWatch, onLeaveWatch, netflixController) {
+  constructor(stateManager, onWatchPageChange, onNavigateToWatch, onLeaveWatch, netflixController, isHostFn) {
     this.stateManager = stateManager;
     this.netflixController = netflixController;
     this.urlMonitorInterval = null;
@@ -12,6 +12,7 @@ export class URLSync {
     this.pendingAutoAdvanceUrl = null;
     this.pendingAutoAdvanceTime = 0;
     this.nextEpisodeObserver = null;
+    this.isHostFn = isHostFn || (() => true); // Default true for backwards compat
     this.onWatchPageChange = onWatchPageChange || (() => {});
     this.onNavigateToWatch = onNavigateToWatch || (() => {});
     this.onLeaveWatch = onLeaveWatch || (() => {});
@@ -116,7 +117,7 @@ export class URLSync {
       const recentRemoteUrlChange = sessionStorage.getItem('tandem_last_remote_url');
       const isEchoingRemoteUrl = recentRemoteUrlChange === normalizedCurrentUrl;
       
-      if (state.partyActive && shouldBroadcastUrl && !isRestoring && !isEchoingRemoteUrl) {
+      if (state.partyActive && shouldBroadcastUrl && !isRestoring && !isEchoingRemoteUrl && this.isHostFn()) {
         console.log('[URLSync] Broadcasting URL change to party:', currentPath);
         
         // Get current time to sync all members to initiator's position
@@ -141,8 +142,8 @@ export class URLSync {
         sessionStorage.removeItem('tandem_last_remote_url');
       }
       
-      // If someone leaves /watch, pause the video for everyone
-      if (state.partyActive && leftWatch) {
+      // If the host leaves /watch, pause the video for everyone
+      if (state.partyActive && leftWatch && this.isHostFn()) {
         console.log('[URLSync] Left /watch page - sending pause to all clients');
         this.stateManager.safeSendMessage({ 
           type: 'PLAY_PAUSE', 

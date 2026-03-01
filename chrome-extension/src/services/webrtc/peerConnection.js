@@ -65,19 +65,15 @@ export function createPeerConnectionFactory({ stateManager, sendSignal, remoteSt
           }
         }
       } else {
-        // Wait for both audio and video tracks before creating video element
+        // Create video element as soon as any track is available.
+        // If the remote peer has no camera or no mic, we still want to show them.
+        // Additional tracks (if they arrive later) are added to the same stream so
+        // the existing video element picks them up automatically.
         const tracks = stream.getTracks();
-        const hasAudio = tracks.some(t => t.kind === 'audio');
-        const hasVideo = tracks.some(t => t.kind === 'video');
-        
-        console.log('[PeerConnection] Stream status - audio:', hasAudio, 'video:', hasVideo, 'total tracks:', tracks.length);
-        
-        // Only create video element when we have both tracks
-        if (hasAudio && hasVideo) {
-          console.log('[PeerConnection] Both tracks present, adding remote video for peer:', peerId);
+        console.log('[PeerConnection] Stream status - audio:', tracks.some(t => t.kind === 'audio'), 'video:', tracks.some(t => t.kind === 'video'), 'total tracks:', tracks.length);
+        if (tracks.length > 0) {
+          console.log('[PeerConnection] Track(s) present, adding remote video for peer:', peerId);
           addRemoteVideo(peerId, stream);
-        } else {
-          console.log('[PeerConnection] Waiting for more tracks before creating video element');
         }
       }
     };

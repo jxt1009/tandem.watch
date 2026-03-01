@@ -65,52 +65,49 @@ export function createRemoteVideoManager(remoteVideos) {
   
   function makeDraggable(element) {
     let isDragging = false;
-    let currentX;
-    let currentY;
-    let initialX;
-    let initialY;
+    let initialX = 0;
+    let initialY = 0;
 
-    element.addEventListener('mousedown', dragStart);
-    element.addEventListener('mouseup', dragEnd);
-    element.addEventListener('mousemove', drag);
-    element.style.cursor = 'move';
+    element.style.cursor = 'grab';
 
-    function dragStart(e) {
-      const computedStyle = window.getComputedStyle(element);
+    element.addEventListener('mousedown', (e) => {
       const rect = element.getBoundingClientRect();
-      
       element.style.left = rect.left + 'px';
       element.style.top = rect.top + 'px';
       element.style.bottom = 'auto';
       element.style.right = 'auto';
-      
+
       initialX = e.clientX - rect.left;
       initialY = e.clientY - rect.top;
       isDragging = true;
       element.style.opacity = '0.8';
+      element.style.cursor = 'grabbing';
+      e.preventDefault();
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseMove(e) {
+      if (!isDragging) return;
+      let x = e.clientX - initialX;
+      let y = e.clientY - initialY;
+
+      const maxX = window.innerWidth - element.offsetWidth;
+      const maxY = window.innerHeight - element.offsetHeight;
+      x = Math.max(0, Math.min(x, maxX));
+      y = Math.max(0, Math.min(y, maxY));
+
+      element.style.left = x + 'px';
+      element.style.top = y + 'px';
     }
 
-    function dragEnd(e) {
-      initialX = currentX;
-      initialY = currentY;
+    function onMouseUp() {
       isDragging = false;
       element.style.opacity = '1';
-    }
-
-    function drag(e) {
-      if (isDragging) {
-        e.preventDefault();
-        currentX = e.clientX - initialX;
-        currentY = e.clientY - initialY;
-        
-        const maxX = window.innerWidth - element.offsetWidth;
-        const maxY = window.innerHeight - element.offsetHeight;
-        currentX = Math.max(0, Math.min(currentX, maxX));
-        currentY = Math.max(0, Math.min(currentY, maxY));
-        
-        element.style.left = currentX + 'px';
-        element.style.top = currentY + 'px';
-      }
+      element.style.cursor = 'grab';
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
     }
   }
 
@@ -223,7 +220,27 @@ export function createRemoteVideoManager(remoteVideos) {
     }
     
     remoteVideos.set(peerId, v);
-    
+
+    // If the remote peer has no video track, show a "no camera" label
+    // instead of a blank black box. Audio will still play through the element.
+    const hasVideoTrack = stream.getTracks().some(t => t.kind === 'video');
+    if (!hasVideoTrack) {
+      const noCamLabel = document.createElement('div');
+      noCamLabel.id = 'tandem-nocam-' + peerId;
+      noCamLabel.style.cssText = `
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        display: flex; align-items: center; justify-content: center;
+        flex-direction: column; gap: 6px;
+        color: #94a3b8; font-size: 13px; font-family: Arial, sans-serif;
+        pointer-events: none;
+      `;
+      noCamLabel.innerHTML = `
+        <div style="font-size:28px">👤</div>
+        <div>No camera</div>
+      `;
+      container.appendChild(noCamLabel);
+    }
+
     // Handle video playback with better error handling
     const playVideo = () => {
       v.play().then(() => {
@@ -309,10 +326,14 @@ export function createRemoteVideoManager(remoteVideos) {
       domElement.remove();
     }
     
-    // Clean up overlay if it exists
+    // Clean up overlay and no-camera label if they exist
     const overlay = document.getElementById('tandem-overlay-' + peerId);
     if (overlay) {
       overlay.remove();
+    }
+    const noCamLabel = document.getElementById('tandem-nocam-' + peerId);
+    if (noCamLabel) {
+      noCamLabel.remove();
     }
   }
   

@@ -243,8 +243,8 @@ async function joinRoomByCode() {
       roomId = await resolveRoomIdFromShortId(serverUrl, parsed.shortId);
     }
     
-    // Get PIN if provided
-    const pin = roomPinInput?.value?.trim() || null;
+    // Get PIN: prefer the explicit pin field, fall back to PIN embedded in the share URL
+    const pin = roomPinInput?.value?.trim() || parsed.pin || null;
     
     // Start party with the retrieved roomId, username, and PIN
     chrome.runtime.sendMessage({ type: 'START_PARTY', roomId, username: persistedUsername, pin }, (response) => {
@@ -314,9 +314,9 @@ function parseRoomInput(input) {
     return { type: 'roomId', roomId: decodeURIComponent(tandemRoomMatch[1]) };
   }
 
-  const roomUrlMatch = trimmed.match(/\/room\/([a-z0-9]+)/i);
+  const roomUrlMatch = trimmed.match(/\/room\/([a-z0-9]+)(?:\/([0-9]+))?/i);
   if (roomUrlMatch) {
-    return { type: 'shortId', shortId: roomUrlMatch[1] };
+    return { type: 'shortId', shortId: roomUrlMatch[1], pin: roomUrlMatch[2] || null };
   }
 
   const uuidMatch = trimmed.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);

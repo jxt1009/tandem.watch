@@ -185,6 +185,13 @@ export class BackgroundService {
           });
         });
       }
+      if (message.type === 'HOST_CHANGED') {
+        chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { type: 'HOST_CHANGED', hostUserId: message.hostUserId }).catch(() => {});
+          });
+        });
+      }
       if (message.type === 'PLAY_PAUSE' && message.userId !== this.userId) {
         console.log('[BackgroundService] Forwarding PLAY_PAUSE to content:', message.control, 'at', message.currentTime, 'from', message.userId);
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {

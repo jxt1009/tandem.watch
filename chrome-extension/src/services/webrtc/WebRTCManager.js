@@ -72,6 +72,7 @@ export class WebRTCManager {
   
   onLocalStreamAvailable(stream) {
     this.localStream = stream;
+    if (!stream) return;
     this.peerConnections.forEach((pc) => {
       try {
         stream.getTracks().forEach(t => addOrReplaceTrack(pc, t, stream));

@@ -82,7 +82,7 @@ const handleLeaveWatch = () => {
   syncManager.teardown();
 };
 
-const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch, netflixController);
+const urlSync = new URLSync(stateManager, handleWatchPageChange, handleNavigationToWatch, handleLeaveWatch, netflixController, () => syncManager.isLocalHost());
 syncManager.setUrlSync(urlSync);
 console.log('[Content Script] Managers initialized');
 
@@ -123,6 +123,29 @@ function checkJoinFromLink() {
 
 let localStream = null;
 let videoElementMonitor = null;
+
+// Try to get a media stream, gracefully falling back if camera or mic is absent.
+// Returns a MediaStream (possibly with fewer tracks than requested) or null if no
+// devices are available at all. Never throws — callers can proceed without media.
+async function getLocalStreamWithFallback() {
+  const attempts = [
+    { video: true, audio: true },
+    { video: false, audio: true },  // no camera
+    { video: true, audio: false },  // no microphone
+  ];
+  for (const constraints of attempts) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      const kinds = stream.getTracks().map(t => t.kind).join('+');
+      console.log('[Content Script] Got media stream:', kinds || 'none');
+      return stream;
+    } catch (err) {
+      console.warn('[Content Script] getUserMedia failed with', JSON.stringify(constraints), '-', err.name, err.message);
+    }
+  }
+  console.warn('[Content Script] No media devices available, proceeding without stream');
+  return null;
+}
 
 // If party was active before this page load, try to restore videos immediately
 if (wasPartyActive) {
@@ -199,20 +222,24 @@ checkJoinFromLink();
           
           // Re-obtain media stream for WebRTC signaling
           console.log('[Content Script] Re-obtaining media stream after navigation');
-          navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+          getLocalStreamWithFallback()
             .then(stream => {
-              console.log('[Content Script] Media stream obtained after restoration');
               localStream = stream;
-              webrtcManager.setLocalStream(stream);
-              webrtcManager.onLocalStreamAvailable(stream);
-              uiManager.attachLocalPreview(stream);
-              
+              if (stream) {
+                console.log('[Content Script] Media stream obtained after restoration');
+                webrtcManager.setLocalStream(stream);
+                webrtcManager.onLocalStreamAvailable(stream);
+                uiManager.attachLocalPreview(stream);
+              } else {
+                console.warn('[Content Script] No media devices after restoration — rejoining without camera/mic');
+              }
+
               // Re-setup sync manager
               syncManager.teardown();
               syncManager.setup().catch(err => {
                 console.error('[Content Script] Failed to setup sync manager after restoration:', err);
               });
-              
+
               // Start URL monitoring if not already started
               urlSync.start();
               startVideoElementMonitoring();
@@ -294,16 +321,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   if (request.type === 'REQUEST_MEDIA_STREAM') {
     console.log('[Content Script] Processing REQUEST_MEDIA_STREAM');
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    getLocalStreamWithFallback()
       .then(stream => {
-        console.log('[Content Script] Media stream obtained, tracks:', stream.getTracks().length);
         localStream = stream;
-        console.log('[Content Script] Setting local stream on WebRTC manager');
-        webrtcManager.setLocalStream(stream);
-        webrtcManager.onLocalStreamAvailable(stream);
-        console.log('[Content Script] Attaching local preview to UI');
-        uiManager.attachLocalPreview(stream);
-        console.log('[Content Script] Local preview attached, sending success response');
+        if (stream) {
+          console.log('[Content Script] Media stream obtained, tracks:', stream.getTracks().length);
+          webrtcManager.setLocalStream(stream);
+          webrtcManager.onLocalStreamAvailable(stream);
+          uiManager.attachLocalPreview(stream);
+        } else {
+          console.warn('[Content Script] No media devices — joining without camera/mic');
+        }
         sendResponse({ success: true });
       })
       .catch(err => {
@@ -345,6 +373,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'ROOM_STATE') {
     if (request.hostUserId) {
       console.log('[Content Script] Room state received - hostUserId:', request.hostUserId);
+      syncManager.setHostUserId(request.hostUserId);
+    }
+  }
+
+  if (request.type === 'HOST_CHANGED') {
+    if (request.hostUserId) {
+      console.log('[Content Script] Host changed - new hostUserId:', request.hostUserId);
       syncManager.setHostUserId(request.hostUserId);
     }
   }

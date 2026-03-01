@@ -212,7 +212,9 @@ const server = http.createServer((req, res) => {
   }
 
   // Handle short URL redirects: /room/shortId or /room/shortId/pin
-  const roomMatch = req.url.match(/^\/room\/([a-z0-9]+)(?:\/([0-9]{6}))?$/i);
+  // Parse the URL to get just the pathname (strips any query string that would break the regex)
+  const parsedPath = (() => { try { return new URL(req.url, 'http://localhost').pathname.replace(/\/$/, ''); } catch { return req.url; } })();
+  const roomMatch = parsedPath.match(/^\/room\/([a-z0-9]+)(?:\/([0-9]+))?$/i);
   if (roomMatch) {
     const shortId = roomMatch[1];
     const pin = roomMatch[2] || null;
@@ -546,6 +548,13 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
+        // Only update room state from the host to preserve accuracy for REQUEST_SYNC responses.
+        // Non-host position updates still track the user's own record.
+        if (userId !== room.hostUserId) {
+          await UserRepository.update(userId, { currentTime, isPlaying });
+          return;
+        }
+
         console.log(`[POSITION_UPDATE] userId: ${userId}, roomId: ${roomId}, currentTime: ${currentTime}, isPlaying: ${isPlaying}`);
 
         // Update both the user and the room with current position
@@ -619,6 +628,10 @@ wss.on('connection', (ws, req) => {
         hasLeft = true;
         logger.debug({ userId, roomId, peerId }, 'User left room');
 
+        // Check if departing user is host before deleting them
+        const leavingRoom = await RoomRepository.getById(roomId);
+        const wasHost = leavingRoom && leavingRoom.hostUserId === userId;
+
         await UserRepository.delete(userId);
 
         const users = await UserRepository.getRoomUsers(roomId);
@@ -626,6 +639,16 @@ wss.on('connection', (ws, req) => {
           await RoomRepository.delete(roomId);
           localRoomSubscribers.delete(roomId);
           logger.debug({ roomId }, 'Room cleaned up (empty after LEAVE)');
+        } else if (wasHost) {
+          // Elect first remaining user as new host
+          const newHostId = users[0].id;
+          await RoomRepository.update(roomId, { hostUserId: newHostId });
+          logger.debug({ roomId, newHostId }, 'New host elected after host left');
+          broadcastToRoom(roomId, {
+            type: 'HOST_CHANGED',
+            hostUserId: newHostId,
+            timestamp: Date.now(),
+          });
         }
 
         broadcastToRoom(roomId, {

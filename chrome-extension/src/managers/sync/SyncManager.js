@@ -118,12 +118,13 @@ export class SyncManager {
       
       this.isInitializedRef.set(false);
       
-      // Check if we just navigated from browse - if so, respect Netflix's natural behavior
-      // and become the leader that others sync to
+      // Check if we just navigated from browse - if so, only the host becomes the
+      // leader that others sync to. Non-hosts request sync like any other joiner.
       const fromBrowse = sessionStorage.getItem('tandem_from_browse');
       if (fromBrowse === 'true') {
-        console.log('[SyncManager] Just navigated from browse - becoming leader, will broadcast state once video is ready');
         sessionStorage.removeItem('tandem_from_browse');
+      }
+      if (fromBrowse === 'true' && this.isLocalHost()) {
         // Mark as initialized immediately so we start broadcasting our state
         this.isInitializedRef.set(true);
         this.initialSyncRequestAt = 0;
@@ -344,9 +345,17 @@ export class SyncManager {
     return window.location.pathname.startsWith('/watch');
   }
 
+  isLocalHost() {
+    return !!(this.hostUserId && this.hostUserId === this.state.getUserId());
+  }
+
   async broadcastPlay(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring PLAY event - not on /watch page');
+      return;
+    }
+    if (!this.isLocalHost()) {
+      console.log('[SyncManager] Ignoring PLAY event - not host');
       return;
     }
     try {
@@ -375,6 +384,10 @@ export class SyncManager {
       console.log('[SyncManager] Ignoring PAUSE event - not on /watch page');
       return;
     }
+    if (!this.isLocalHost()) {
+      console.log('[SyncManager] Ignoring PAUSE event - not host');
+      return;
+    }
     try {
       const currentTimeMs = await this.netflix.getCurrentTime();
       const currentTime = currentTimeMs != null ? currentTimeMs / 1000 : (video?.currentTime || 0);
@@ -399,6 +412,10 @@ export class SyncManager {
   broadcastSeek(video) {
     if (!this.isOnWatchPage()) {
       console.log('[SyncManager] Ignoring SEEK event - not on /watch page');
+      return;
+    }
+    if (!this.isLocalHost()) {
+      console.log('[SyncManager] Ignoring SEEK event - not host');
       return;
     }
     console.log('[SyncManager] Broadcasting SEEK event at', video.currentTime);
