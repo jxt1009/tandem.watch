@@ -26,8 +26,8 @@ const SIDEBAR_WIDTH = 300;
  *   updateUsername(userId, username)
  */
 export class SidebarPanel {
-  constructor({ onLeave, onToggleGuestControl, onTransferHost } = {}) {
-    this.callbacks = { onLeave, onToggleGuestControl, onTransferHost };
+  constructor({ onLeave, onToggleGuestControl, onTransferHost, onToggleMic, onToggleCamera, onUsernameChange } = {}) {
+    this.callbacks = { onLeave, onToggleGuestControl, onTransferHost, onToggleMic, onToggleCamera, onUsernameChange };
 
     this.localUserId = null;
     this.hostUserId = null;
@@ -44,6 +44,16 @@ export class SidebarPanel {
     this._statusText = null;
     this._guestControlWrap = null;
     this._guestToggle = null;
+    // footer controls
+    this._micBtn = null;
+    this._cameraBtn = null;
+    this._copyLinkBtn = null;
+    this._roomCodeEl = null;
+    this._roomPinEl = null;
+    this._usernameInput = null;
+    this._roomCode = null;
+    this._shareLink = null;
+    this._roomPin = null;
   }
 
   mount() {
@@ -53,6 +63,7 @@ export class SidebarPanel {
     this._buildDOM();
     document.body.appendChild(this._sidebar);
     document.body.appendChild(this._tab);
+    this._applyLayoutShift(SIDEBAR_WIDTH);
   }
 
   destroy() {
@@ -66,6 +77,9 @@ export class SidebarPanel {
     this.participants.clear();
     if (this._sidebar) { this._sidebar.remove(); this._sidebar = null; }
     if (this._tab) { this._tab.remove(); this._tab = null; }
+    this._applyLayoutShift(0);
+    const layoutStyle = document.getElementById('tandem-layout-style');
+    if (layoutStyle) layoutStyle.remove();
   }
 
   setLocalUserId(userId, username) {
@@ -188,6 +202,33 @@ export class SidebarPanel {
     p.avatarLgEl.textContent = getInitials(username);
   }
 
+  setShareInfo(shortId, shareLink, pin) {
+    this._roomCode = shortId;
+    this._shareLink = shareLink;
+    this._roomPin = pin;
+    if (this._roomCodeEl) this._roomCodeEl.textContent = shortId || '—';
+    if (this._roomPinEl) this._roomPinEl.textContent = pin || '—';
+  }
+
+  setMediaState(audioEnabled, videoEnabled) {
+    if (this._micBtn) {
+      const icon = this._micBtn.querySelector('.tandem-media-icon');
+      if (icon) icon.textContent = audioEnabled ? '🎤' : '🔇';
+      this._micBtn.classList.toggle('tandem-muted', !audioEnabled);
+    }
+    if (this._cameraBtn) {
+      const icon = this._cameraBtn.querySelector('.tandem-media-icon');
+      if (icon) icon.textContent = videoEnabled ? '📷' : '🚫';
+      this._cameraBtn.classList.toggle('tandem-muted', !videoEnabled);
+    }
+  }
+
+  setUsername(username) {
+    if (this._usernameInput && username) {
+      this._usernameInput.value = username;
+    }
+  }
+
   // ─── Private helpers ────────────────────────────────────────────────────────
 
   _refreshStatus() {
@@ -223,11 +264,13 @@ export class SidebarPanel {
       this._tab.style.right = '0';
       this._tab.textContent = '❮';
       this._tab.title = 'Show party panel';
+      this._applyLayoutShift(0);
     } else {
       this._sidebar.style.transform = 'translateX(0)';
       this._tab.style.right = `${SIDEBAR_WIDTH}px`;
       this._tab.textContent = '❯';
       this._tab.title = 'Hide party panel';
+      this._applyLayoutShift(SIDEBAR_WIDTH);
     }
   }
 
@@ -345,7 +388,112 @@ export class SidebarPanel {
     const footer = document.createElement('div');
     footer.className = 'tandem-footer';
 
-    // Guest control toggle (host only)
+    // ── Share section ────────────────────────────────────────────────────────
+    const shareSection = document.createElement('div');
+    shareSection.className = 'tandem-share-section';
+
+    const codeRow = document.createElement('div');
+    codeRow.className = 'tandem-info-row';
+    const codeLabel = document.createElement('span');
+    codeLabel.className = 'tandem-info-label';
+    codeLabel.textContent = 'Code';
+    this._roomCodeEl = document.createElement('span');
+    this._roomCodeEl.className = 'tandem-info-value';
+    this._roomCodeEl.textContent = '—';
+    const copyCodeBtn = document.createElement('button');
+    copyCodeBtn.className = 'tandem-copy-btn';
+    copyCodeBtn.textContent = 'Copy';
+    copyCodeBtn.addEventListener('click', () => {
+      if (!this._roomCode) return;
+      navigator.clipboard.writeText(this._roomCode);
+      copyCodeBtn.textContent = '✓';
+      setTimeout(() => { copyCodeBtn.textContent = 'Copy'; }, 1500);
+    });
+    codeRow.appendChild(codeLabel);
+    codeRow.appendChild(this._roomCodeEl);
+    codeRow.appendChild(copyCodeBtn);
+
+    const pinRow = document.createElement('div');
+    pinRow.className = 'tandem-info-row';
+    const pinLabel = document.createElement('span');
+    pinLabel.className = 'tandem-info-label';
+    pinLabel.textContent = 'PIN';
+    this._roomPinEl = document.createElement('span');
+    this._roomPinEl.className = 'tandem-info-value';
+    this._roomPinEl.textContent = '—';
+    const copyPinBtn = document.createElement('button');
+    copyPinBtn.className = 'tandem-copy-btn';
+    copyPinBtn.textContent = 'Copy';
+    copyPinBtn.addEventListener('click', () => {
+      if (!this._roomPin) return;
+      navigator.clipboard.writeText(this._roomPin);
+      copyPinBtn.textContent = '✓';
+      setTimeout(() => { copyPinBtn.textContent = 'Copy'; }, 1500);
+    });
+    pinRow.appendChild(pinLabel);
+    pinRow.appendChild(this._roomPinEl);
+    pinRow.appendChild(copyPinBtn);
+
+    this._copyLinkBtn = document.createElement('button');
+    this._copyLinkBtn.className = 'tandem-copy-link-btn';
+    this._copyLinkBtn.textContent = '🔗 Copy invite link';
+    this._copyLinkBtn.addEventListener('click', () => {
+      const text = this._shareLink || this._roomCode;
+      if (!text) return;
+      navigator.clipboard.writeText(text);
+      this._copyLinkBtn.textContent = '✓ Copied!';
+      setTimeout(() => { this._copyLinkBtn.textContent = '🔗 Copy invite link'; }, 2000);
+    });
+
+    shareSection.appendChild(codeRow);
+    shareSection.appendChild(pinRow);
+    shareSection.appendChild(this._copyLinkBtn);
+
+    // ── Username section ─────────────────────────────────────────────────────
+    const usernameSection = document.createElement('div');
+    usernameSection.className = 'tandem-username-section';
+    const usernameSectionLabel = document.createElement('span');
+    usernameSectionLabel.className = 'tandem-section-label';
+    usernameSectionLabel.textContent = 'Name';
+    this._usernameInput = document.createElement('input');
+    this._usernameInput.type = 'text';
+    this._usernameInput.className = 'tandem-username-input';
+    this._usernameInput.placeholder = 'Your display name…';
+    let _usernameDebounce = null;
+    this._usernameInput.addEventListener('input', () => {
+      clearTimeout(_usernameDebounce);
+      _usernameDebounce = setTimeout(() => {
+        const newName = this._usernameInput.value.trim();
+        if (newName) this.callbacks.onUsernameChange && this.callbacks.onUsernameChange(newName);
+      }, 600);
+    });
+    usernameSection.appendChild(usernameSectionLabel);
+    usernameSection.appendChild(this._usernameInput);
+
+    // ── Mic / camera toggles ─────────────────────────────────────────────────
+    const mediaSection = document.createElement('div');
+    mediaSection.className = 'tandem-media-section';
+
+    this._micBtn = document.createElement('button');
+    this._micBtn.className = 'tandem-media-btn';
+    this._micBtn.title = 'Toggle microphone';
+    this._micBtn.innerHTML = '<span class="tandem-media-icon">🎤</span><span class="tandem-media-label">Mic</span>';
+    this._micBtn.addEventListener('click', () => {
+      this.callbacks.onToggleMic && this.callbacks.onToggleMic();
+    });
+
+    this._cameraBtn = document.createElement('button');
+    this._cameraBtn.className = 'tandem-media-btn';
+    this._cameraBtn.title = 'Toggle camera';
+    this._cameraBtn.innerHTML = '<span class="tandem-media-icon">📷</span><span class="tandem-media-label">Cam</span>';
+    this._cameraBtn.addEventListener('click', () => {
+      this.callbacks.onToggleCamera && this.callbacks.onToggleCamera();
+    });
+
+    mediaSection.appendChild(this._micBtn);
+    mediaSection.appendChild(this._cameraBtn);
+
+    // ── Guest control toggle (host only) ─────────────────────────────────────
     this._guestControlWrap = document.createElement('div');
     this._guestControlWrap.className = 'tandem-guest-control';
     this._guestControlWrap.style.display = 'none';
@@ -364,7 +512,7 @@ export class SidebarPanel {
     this._guestControlWrap.appendChild(this._guestToggle);
     this._guestControlWrap.appendChild(guestLabel);
 
-    // Leave button
+    // ── Leave button ─────────────────────────────────────────────────────────
     const leaveBtn = document.createElement('button');
     leaveBtn.className = 'tandem-leave-btn';
     leaveBtn.textContent = 'Leave Party';
@@ -372,6 +520,9 @@ export class SidebarPanel {
       this.callbacks.onLeave && this.callbacks.onLeave();
     });
 
+    footer.appendChild(shareSection);
+    footer.appendChild(usernameSection);
+    footer.appendChild(mediaSection);
     footer.appendChild(this._guestControlWrap);
     footer.appendChild(leaveBtn);
 
@@ -594,9 +745,137 @@ export class SidebarPanel {
         border-top: 1px solid rgba(255,255,255,0.07);
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
+        flex-shrink: 0;
+        overflow-y: auto;
+        max-height: 320px;
+      }
+
+      .tandem-footer::-webkit-scrollbar { width: 4px; }
+      .tandem-footer::-webkit-scrollbar-track { background: transparent; }
+      .tandem-footer::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
+
+      .tandem-share-section {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+      }
+
+      .tandem-info-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tandem-info-label {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 500;
+        width: 32px;
         flex-shrink: 0;
       }
+
+      .tandem-info-value {
+        flex: 1;
+        color: #cbd5e1;
+        font-size: 12px;
+        font-family: monospace;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tandem-copy-btn {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.1);
+        color: #94a3b8;
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-family: inherit;
+        flex-shrink: 0;
+        transition: background 0.15s ease;
+      }
+      .tandem-copy-btn:hover { background: rgba(255,255,255,0.14); }
+
+      .tandem-copy-link-btn {
+        width: 100%;
+        padding: 6px;
+        background: rgba(14,165,233,0.1);
+        border: 1px solid rgba(14,165,233,0.25);
+        color: #38bdf8;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 7px;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease;
+      }
+      .tandem-copy-link-btn:hover { background: rgba(14,165,233,0.2); }
+
+      .tandem-username-section {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+      }
+
+      .tandem-section-label {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 500;
+        flex-shrink: 0;
+      }
+
+      .tandem-username-input {
+        flex: 1;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 6px;
+        padding: 5px 8px;
+        color: #e2e8f0;
+        font-size: 12px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      .tandem-username-input:focus { border-color: rgba(14,165,233,0.5); }
+      .tandem-username-input::placeholder { color: #475569; }
+
+      .tandem-media-section {
+        display: flex;
+        gap: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+      }
+
+      .tandem-media-btn {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        padding: 7px 8px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        color: #e2e8f0;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .tandem-media-btn:hover { background: rgba(255,255,255,0.12); }
+      .tandem-media-btn.tandem-muted {
+        background: rgba(239,68,68,0.12);
+        border-color: rgba(239,68,68,0.22);
+        color: #f87171;
+      }
+      .tandem-media-icon { font-size: 14px; }
+      .tandem-media-label { font-size: 10px; font-weight: 600; }
 
       .tandem-guest-control {
         display: flex;
@@ -665,5 +944,39 @@ export class SidebarPanel {
       }
     `;
     document.head.appendChild(style);
+  }
+
+  /** Shift the Netflix player left/right to avoid the sidebar covering it. */
+  _applyLayoutShift(width) {
+    let style = document.getElementById('tandem-layout-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'tandem-layout-style';
+      document.head.appendChild(style);
+    }
+    const transition = 'right 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1)';
+    if (width > 0) {
+      style.textContent = `
+        .watch-video,
+        .nf-player-container,
+        [data-uia="player-container"],
+        .NFPlayer__container {
+          right: ${width}px !important;
+          width: calc(100vw - ${width}px) !important;
+          transition: ${transition} !important;
+        }
+      `;
+    } else {
+      style.textContent = `
+        .watch-video,
+        .nf-player-container,
+        [data-uia="player-container"],
+        .NFPlayer__container {
+          right: 0 !important;
+          width: 100vw !important;
+          transition: ${transition} !important;
+        }
+      `;
+    }
   }
 }

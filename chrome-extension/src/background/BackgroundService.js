@@ -81,7 +81,7 @@ export class BackgroundService {
         this.ws.send(JSON.stringify({ type: 'JOIN', userId: this.userId, roomId: this.roomId, username: this.username || null, pin: this.pin || null, timestamp: Date.now() }));
         chrome.tabs.query({ url: 'https://www.netflix.com/*' }, (tabs) => {
           tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId, username: this.username || this.userId }).catch(() => {});
+            chrome.tabs.sendMessage(tab.id, { type: 'PARTY_STARTED', userId: this.userId, roomId: this.roomId, username: this.username || this.userId, pin: this.pin || null }).catch(() => {});
             chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_INITIAL_SYNC_AND_PLAY' }).catch(() => {});
             // Start with "waiting" status - will update when others join
             chrome.tabs.sendMessage(tab.id, { type: 'CONNECTION_STATUS', status: 'waiting' }).catch(() => {});

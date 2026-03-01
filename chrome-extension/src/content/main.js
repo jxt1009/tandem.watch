@@ -5,6 +5,7 @@ import { WebRTCManager } from '../services/webrtc/WebRTCManager.js';
 import { UIManager } from '../ui/UIManager.js';
 import { URLSync } from '../managers/url/URLSync.js';
 import { SidebarPanel } from '../ui/SidebarPanel.js';
+import { CONFIG } from '../config.js';
 
 console.log('[Content Script] Initializing managers...');
 
@@ -207,6 +208,25 @@ function stopVideoElementMonitoring() {
   }
 }
 
+async function fetchAndSetShareInfo(roomId, pin) {
+  if (!sidebarPanel) return;
+  try {
+    const serverUrl = CONFIG.WS.URL.replace(/^wss?:\/\//, 'https://').replace(/\/ws$/, '');
+    const response = await fetch(`${serverUrl}/api/short-id/${encodeURIComponent(roomId)}`);
+    if (response.ok) {
+      const data = await response.json();
+      const shortId = data.shortId;
+      const shareLink = `${serverUrl}/room/${shortId}${pin ? '/' + pin : ''}`;
+      sidebarPanel.setShareInfo(shortId, shareLink, pin);
+    } else {
+      sidebarPanel.setShareInfo(roomId.substring(0, 8), null, pin);
+    }
+  } catch (err) {
+    console.warn('[Content Script] Could not fetch share info:', err);
+    sidebarPanel.setShareInfo(roomId.substring(0, 8), null, pin);
+  }
+}
+
 checkJoinFromLink();
 
 (function checkRestorePartyState() {
@@ -235,9 +255,34 @@ checkJoinFromLink();
               onTransferHost: (targetUserId) => {
                 stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
               },
+              onToggleMic: () => {
+                if (!localStream) return;
+                const tracks = localStream.getAudioTracks();
+                if (!tracks.length) return;
+                const newEnabled = !tracks[0].enabled;
+                tracks.forEach(t => { t.enabled = newEnabled; });
+                const videoEnabled = localStream.getVideoTracks()[0]?.enabled ?? true;
+                sidebarPanel.setMediaState(newEnabled, videoEnabled);
+              },
+              onToggleCamera: () => {
+                if (!localStream) return;
+                const tracks = localStream.getVideoTracks();
+                if (!tracks.length) return;
+                const newEnabled = !tracks[0].enabled;
+                tracks.forEach(t => { t.enabled = newEnabled; });
+                const audioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
+                sidebarPanel.setMediaState(audioEnabled, newEnabled);
+              },
+              onUsernameChange: (newName) => {
+                if (chrome?.storage?.local) chrome.storage.local.set({ tandemUsername: newName }, () => {});
+                chrome.runtime.sendMessage({ type: 'UPDATE_USERNAME', username: newName });
+              },
             });
             sidebarPanel.mount();
-            sidebarPanel.setLocalUserId(response.userId, response.username || response.userId);
+            const restoredUsername = response.username || response.userId;
+            sidebarPanel.setLocalUserId(response.userId, restoredUsername);
+            sidebarPanel.setUsername(restoredUsername);
+            fetchAndSetShareInfo(response.roomId, response.pin || null);
             webrtcManager.setSidebarPanel(sidebarPanel);
           }
           
@@ -253,6 +298,9 @@ checkJoinFromLink();
                 if (sidebarPanel) {
                   const myId = stateManager.getUserId();
                   if (myId) sidebarPanel.setLocalStream(myId, stream);
+                  const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? false;
+                  const videoEnabled = stream.getVideoTracks()[0]?.enabled ?? false;
+                  sidebarPanel.setMediaState(audioEnabled, videoEnabled);
                 } else {
                   uiManager.attachLocalPreview(stream);
                 }
@@ -358,6 +406,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           if (sidebarPanel) {
             const myId = stateManager.getUserId();
             if (myId) sidebarPanel.setLocalStream(myId, stream);
+            // Set initial mic/cam state in sidebar
+            const audioEnabled = stream.getAudioTracks()[0]?.enabled ?? false;
+            const videoEnabled = stream.getVideoTracks()[0]?.enabled ?? false;
+            sidebarPanel.setMediaState(audioEnabled, videoEnabled);
           } else {
             uiManager.attachLocalPreview(stream);
           }
@@ -390,9 +442,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       onTransferHost: (targetUserId) => {
         stateManager.safeSendMessage({ type: 'TRANSFER_HOST', targetUserId });
       },
+      onToggleMic: () => {
+        if (!localStream) return;
+        const tracks = localStream.getAudioTracks();
+        if (!tracks.length) return;
+        const newEnabled = !tracks[0].enabled;
+        tracks.forEach(t => { t.enabled = newEnabled; });
+        const videoEnabled = localStream.getVideoTracks()[0]?.enabled ?? true;
+        sidebarPanel.setMediaState(newEnabled, videoEnabled);
+      },
+      onToggleCamera: () => {
+        if (!localStream) return;
+        const tracks = localStream.getVideoTracks();
+        if (!tracks.length) return;
+        const newEnabled = !tracks[0].enabled;
+        tracks.forEach(t => { t.enabled = newEnabled; });
+        const audioEnabled = localStream.getAudioTracks()[0]?.enabled ?? true;
+        sidebarPanel.setMediaState(audioEnabled, newEnabled);
+      },
+      onUsernameChange: (newName) => {
+        if (chrome?.storage?.local) {
+          chrome.storage.local.set({ tandemUsername: newName }, () => {});
+        }
+        chrome.runtime.sendMessage({ type: 'UPDATE_USERNAME', username: newName });
+      },
     });
     sidebarPanel.mount();
-    sidebarPanel.setLocalUserId(request.userId, request.username || request.userId);
+
+    // Set local user tile
+    const myUsername = request.username || request.userId;
+    sidebarPanel.setLocalUserId(request.userId, myUsername);
+    sidebarPanel.setUsername(myUsername);
+
+    // Fetch/display share info (room code + PIN + invite link)
+    fetchAndSetShareInfo(request.roomId, request.pin || null);
 
     // Wire sidebar into WebRTC so video streams route to tiles
     webrtcManager.setSidebarPanel(sidebarPanel);

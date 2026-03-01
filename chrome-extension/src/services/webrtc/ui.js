@@ -533,6 +533,21 @@ export function createRemoteVideoManager(remoteVideos, sidebarPanel = null) {
   
   function setSidebarPanel(panel) {
     sidebarPanel = panel;
+    if (panel) {
+      // Clean up any floating video containers that were created before the sidebar was ready
+      remoteVideos.forEach((videoEl, peerId) => {
+        const container = document.getElementById('tandem-container-' + peerId);
+        if (container) container.remove();
+        remoteVideos.set(peerId, null); // mark as handled by sidebar
+      });
+      // Remove the floating local preview as well (sidebar has its own tile)
+      const localPreview = document.getElementById('tandem-local-preview');
+      if (localPreview) {
+        const localContainer = localPreview.closest('[id^="tandem-local"]') || localPreview.parentElement;
+        if (localContainer && localContainer !== document.body) localContainer.remove();
+        else localPreview.remove();
+      }
+    }
   }
 
   return { add, remove, showReconnecting, hideOverlay, showPlaceholder, showWaitingIndicator, hideWaitingIndicator, setSidebarPanel };
